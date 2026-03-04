@@ -1,0 +1,93 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"sync"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	defaultConfigFile = "config.yaml"
+	hardcodedDefault  = "gemini-2.5-pro"
+)
+
+type Config struct {
+	Models ModelsConfig `yaml:"models"`
+}
+
+type ModelsConfig struct {
+	Default   string `yaml:"default"`
+	Inspector string `yaml:"inspector"`
+	Planner   string `yaml:"planner"`
+	Executor  string `yaml:"executor"`
+	Verifier  string `yaml:"verifier"`
+}
+
+var (
+	cfg     *Config
+	cfgErr  error
+	cfgOnce sync.Once
+)
+
+// Load reads and parses the config file. Missing file is not an error.
+// Bad YAML is an error. Uses sync.Once for singleton behavior.
+func Load() (*Config, error) {
+	cfgOnce.Do(func() {
+		cfg = &Config{}
+
+		path := os.Getenv("AGENTS_CONFIG")
+		if path == "" {
+			path = defaultConfigFile
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return // missing file is fine, use zero-value config
+			}
+			cfgErr = fmt.Errorf("reading config %s: %w", path, err)
+			return
+		}
+
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			cfgErr = fmt.Errorf("parsing config %s: %w", path, err)
+		}
+	})
+	return cfg, cfgErr
+}
+
+// ModelForAgent returns the model name for the given agent, falling back
+// to the default model, then to the hardcoded default.
+func (c *Config) ModelForAgent(agent string) string {
+	var specific string
+	switch agent {
+	case "inspector":
+		specific = c.Models.Inspector
+	case "planner":
+		specific = c.Models.Planner
+	case "executor":
+		specific = c.Models.Executor
+	case "verifier":
+		specific = c.Models.Verifier
+	}
+	if specific != "" {
+		return specific
+	}
+	if c.Models.Default != "" {
+		return c.Models.Default
+	}
+	return hardcodedDefault
+}
+
+// ModelName is a convenience function that loads config and returns
+// the model name for the given agent. Never fails — returns the
+// hardcoded default on error.
+func ModelName(agent string) string {
+	c, err := Load()
+	if err != nil {
+		return hardcodedDefault
+	}
+	return c.ModelForAgent(agent)
+}

@@ -1,0 +1,4 @@
+models:
+  default: gemini-2.5-pro
+  inspector: gemini-3-pro-preview
+  planner: gemini-3-pro-preview
