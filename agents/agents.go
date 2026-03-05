@@ -150,3 +150,175 @@ When issues are found, suggest remediation approaches:
 		},
 	})
 }
+
+// --- PlatformChecker redesign: deployment-compatibility specialists ---
+
+func NewCapacityChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "capacity_checker",
+		Model:       m,
+		Description: "Checks whether the cluster has enough available CPU and memory capacity to schedule the app's resource requests.",
+		Instruction: `You are a cluster capacity checker. Your job is to determine whether the cluster has enough allocatable resources to deploy a new application.
+
+Use list_nodes to enumerate nodes and their allocatable CPU/memory.
+Use get_node_resource_usage to see current consumption (may be unavailable if metrics-server is absent).
+
+Report:
+- Total allocatable CPU and memory across all Ready nodes
+- Current usage per node (if metrics available)
+- Estimated free capacity
+- BLOCK if no node has enough free resources to fit the app's requests
+- WARN if total free capacity is less than 20% of total allocatable
+- PASS if sufficient capacity exists`,
+		Tools: []tool.Tool{
+			tools.ListNodes(),
+			tools.GetNodeResourceUsage(),
+		},
+	})
+}
+
+func NewAdmissionChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "admission_checker",
+		Model:       m,
+		Description: "Checks Pod Security Admission (PSA) enforcement labels on the target namespace and available ingress classes.",
+		Instruction: `You are an admission policy checker. Your job is to identify admission controls that could reject the app at deploy time.
+
+Use list_pod_security_standards to check PSA enforcement labels on the target namespace.
+Use list_ingress_classes to check if the required ingress controller is present.
+
+Report:
+- PSA enforcement level on target namespace (privileged / baseline / restricted)
+- BLOCK if namespace enforces restricted PSA and the app runs as root or uses privileged containers
+- WARN if namespace enforces baseline PSA and the app uses privileged mode
+- BLOCK if the app requires an ingress class that is not available`,
+		Tools: []tool.Tool{
+			tools.ListPodSecurityStandards(),
+			tools.ListIngressClasses(),
+		},
+	})
+}
+
+func NewQuotaChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "quota_checker",
+		Model:       m,
+		Description: "Checks ResourceQuota and LimitRange constraints in the target namespace.",
+		Instruction: `You are a namespace quota checker. Your job is to determine whether namespace-level resource constraints would block the app from being deployed.
+
+Use get_namespace_quota to check ResourceQuota usage vs. hard limits.
+Use get_namespace_limitrange to check LimitRange defaults and maximums.
+
+Report:
+- Current quota usage vs. hard limits for CPU, memory, and pod count
+- LimitRange defaults that would be injected into the app's pods
+- BLOCK if the namespace quota is already at or near its hard limit (pod count, CPU, or memory)
+- WARN if LimitRange maximums are lower than the app's requested limits`,
+		Tools: []tool.Tool{
+			tools.GetNamespaceQuota(),
+			tools.GetNamespaceLimitRange(),
+		},
+	})
+}
+
+func NewDependencyChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "dependency_checker",
+		Model:       m,
+		Description: "Checks whether the cluster supports the API versions and CRDs required by the app's manifests.",
+		Instruction: `You are a deployment dependency checker. Your job is to verify that all cluster-level prerequisites for the app exist.
+
+Use get_cluster_version to identify the Kubernetes version.
+Use list_api_resources to verify that required apiVersions are available (e.g. batch/v1, networking.k8s.io/v1).
+Use list_crds to verify that required CustomResourceDefinitions are installed (e.g. cert-manager Certificate, Prometheus ServiceMonitor, external-secrets ExternalSecret).
+
+Report:
+- Cluster Kubernetes version
+- Any apiVersion used by the app that is not available in this cluster → BLOCK
+- Any required CRD that is missing → BLOCK
+- List of available CRDs for reference`,
+		Tools: []tool.Tool{
+			tools.GetClusterVersion(),
+			tools.ListAPIResources(),
+			tools.ListCRDs(),
+		},
+	})
+}
+
+func NewSchedulingChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "scheduling_checker",
+		Model:       m,
+		Description: "Checks whether nodes exist that satisfy the app's nodeSelector, node affinity rules, and tolerations.",
+		Instruction: `You are a pod scheduling checker. Your job is to determine whether the app's pods can actually be scheduled on existing nodes given their scheduling constraints.
+
+Use get_node_scheduling_info to retrieve every node's labels, taints, allocatable CPU/memory, and Ready status.
+
+For each scheduling constraint the app defines, evaluate it against the node list:
+
+**nodeSelector** — check that at least one Ready node has ALL the required key=value labels.
+  → BLOCK if no Ready node matches all required labels.
+
+**Node affinity (requiredDuringSchedulingIgnoredDuringExecution)** — treat like a hard nodeSelector.
+  → BLOCK if no Ready node satisfies all required match expressions.
+
+**Node affinity (preferredDuringSchedulingIgnoredDuringExecution)** — soft preference.
+  → WARN if no node satisfies the preference (scheduling still works, but placement is suboptimal).
+
+**Tolerations** — check that for every taint on candidate nodes, the app either tolerates it or the taint effect is PreferNoSchedule.
+  → BLOCK if every Ready node has a NoSchedule or NoExecute taint that the app does not tolerate.
+  → WARN if some nodes are excluded by taints but at least one schedulable node remains.
+
+**Overall verdict:**
+- BLOCK if no Ready node can satisfy all hard scheduling constraints
+- WARN if scheduling works but with reduced node pool
+- PASS if multiple Ready nodes satisfy all constraints`,
+		Tools: []tool.Tool{
+			tools.GetNodeSchedulingInfo(),
+		},
+	})
+}
+
+func NewNetworkPolicyChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "network_policy_checker",
+		Model:       m,
+		Description: "Checks existing NetworkPolicies in the target namespace that could block traffic to or from the new app.",
+		Instruction: `You are a network policy checker. Your job is to identify existing NetworkPolicies that could block ingress or egress traffic to the new application.
+
+Use list_network_policies to enumerate policies in the target namespace.
+Use list_namespaces to understand namespace labels used in policy selectors.
+
+Report:
+- All NetworkPolicies in the target namespace
+- Policies that select all pods (could inadvertently restrict the new app)
+- WARN if default-deny ingress or egress policies exist that would block the app's traffic
+- PASS if no blocking policies are found`,
+		Tools: []tool.Tool{
+			tools.ListNetworkPolicies(),
+			tools.ListNamespaces(),
+		},
+	})
+}
+
+func NewStorageCompatibilityChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "storage_compatibility_checker",
+		Model:       m,
+		Description: "Checks whether the storage classes required by the app's PersistentVolumeClaims exist and have working provisioners.",
+		Instruction: `You are a storage compatibility checker. Your job is to verify that the cluster can provision the storage the app needs.
+
+Use list_storage_classes to enumerate available storage classes and their provisioners.
+Use list_persistent_volumes to check existing PV availability and binding status.
+
+Report:
+- Available storage classes and their provisioners
+- BLOCK if a storage class required by the app does not exist
+- WARN if a required storage class uses no-provisioner (manual pre-provisioning required)
+- PASS if all required storage classes exist with functioning provisioners`,
+		Tools: []tool.Tool{
+			tools.ListStorageClasses(),
+			tools.ListPersistentVolumes(),
+		},
+	})
+}

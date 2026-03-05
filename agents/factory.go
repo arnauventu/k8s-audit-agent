@@ -107,34 +107,35 @@ This section is required. It enables the Correlator to match repo findings with 
 	})
 }
 
-// NewPlatformCheckerRoot builds the platform checker root agent with all 7 K8s
-// specialist sub-agents for cluster health inspection.
+// NewPlatformCheckerRoot builds the platform checker root agent. It orchestrates
+// 7 deployment-compatibility specialists to determine whether the target application
+// can be successfully deployed on this cluster.
 func NewPlatformCheckerRoot(m model.LLM) (agent.Agent, error) {
-	workload, err := NewWorkloadInspector(m)
+	capacity, err := NewCapacityChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	network, err := NewNetworkInspector(m)
+	admission, err := NewAdmissionChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	storage, err := NewStorageInspector(m)
+	quota, err := NewQuotaChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	rbac, err := NewRBACInspector(m)
+	dependency, err := NewDependencyChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	security, err := NewSecurityInspector(m)
+	scheduling, err := NewSchedulingChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	events, err := NewEventInspector(m)
+	networkPolicy, err := NewNetworkPolicyChecker(m)
 	if err != nil {
 		return nil, err
 	}
-	nodes, err := NewNodeInspector(m)
+	storageCompat, err := NewStorageCompatibilityChecker(m)
 	if err != nil {
 		return nil, err
 	}
@@ -142,48 +143,59 @@ func NewPlatformCheckerRoot(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        "platform_checker",
 		Model:       m,
-		Description: "Inspects a live Kubernetes cluster for health, security, and configuration issues across workloads, networking, storage, RBAC, nodes, and events.",
-		Instruction: `You are a Kubernetes cluster inspector. You perform read-only analysis of a live cluster to identify health issues, security gaps, and misconfigurations. Your findings will be passed to the Correlator agent — do NOT file GitHub issues directly.
+		Description: "Inspects a live Kubernetes cluster to determine whether a target application can be successfully deployed. Checks capacity, admission policies, quotas, API/CRD dependencies, scheduling constraints, network policies, and storage.",
+		Instruction: `You are a Kubernetes deployment compatibility checker. Given an application's requirements and its target namespace, your job is to determine what — if anything — would prevent the application from being deployed successfully on this cluster.
+
+You answer one question: **Can this application be deployed here?**
 
 ## WORKFLOW
 
-### 1. INSPECT — Gather data
-For simple listing queries, use direct tools: list_namespaces, list_pods, list_deployments, list_services, list_nodes.
+### 1. GATHER CONTEXT
+The user will provide the application's requirements. Extract:
+- Target namespace
+- CPU and memory resource requests/limits
+- Storage class names and sizes (if PVCs are needed)
+- Ingress class name (if Ingress resources are used)
+- Required CRDs or custom resources (e.g. cert-manager Certificate, Prometheus ServiceMonitor)
+- Required Kubernetes apiVersions
+- nodeSelector, tolerations, or affinity rules (if any)
 
-For deep analysis, delegate to specialist agents:
-- workload_inspector: pod crashes, deployment rollouts, job failures
-- network_inspector: services, endpoints, ingresses, network policies
-- storage_inspector: persistent volumes and claims
-- rbac_inspector: roles, bindings, service accounts
-- security_inspector: pod security contexts, PSA enforcement
-- event_inspector: cluster events and warnings
-- node_inspector: node health and resource usage
+### 2. RUN CHECKS — Delegate to specialists
+Run all relevant specialist checks in parallel:
+- capacity_checker: is there enough CPU/memory to schedule the app?
+- admission_checker: will PSA or admission webhooks reject the app?
+- quota_checker: do namespace quotas allow the app to be created?
+- dependency_checker: are required API versions and CRDs available?
+- scheduling_checker: are there nodes that match the app's scheduling constraints?
+- network_policy_checker: would existing policies block the app's traffic?
+- storage_compatibility_checker: do required storage classes exist?
 
-For a full health check, invoke all specialists and synthesize findings.
+### 3. REPORT — Structured gate results
+For each check, report one of:
+- **BLOCK** — deployment will definitely fail; must be fixed before deploying
+- **WARN** — deployment may succeed but there is a risk or misconfiguration
+- **PASS** — no issues found for this check
 
-### 2. REPORT — Summarize all findings
-Compile findings from all specialists into a structured summary:
-- Group by severity: critical, high, medium, low
-- For each finding: resource kind, namespace, name, current status, description of the problem
-- Note any patterns (e.g. multiple pods OOMKilling, multiple nodes under pressure)
+Then provide an overall verdict:
+- **DEPLOYABLE** — all checks pass or warn only
+- **NOT DEPLOYABLE** — at least one check is BLOCK
 
 ## RULES
 - Never modify the cluster — read-only analysis only
 - Do not file GitHub issues — that is the Reporter agent's job
-- Report all findings clearly so the Correlator can cross-reference them with repo findings`,
+- Be specific: name the resource, namespace, and constraint that causes each BLOCK or WARN
+- Report findings clearly so the Correlator can cross-reference them with repo findings`,
 		Tools: []tool.Tool{
+			tools.GetClusterVersion(),
 			tools.ListNamespaces(),
-			tools.ListPods(),
-			tools.ListDeployments(),
-			tools.ListServices(),
 			tools.ListNodes(),
-			agenttool.New(workload, nil),
-			agenttool.New(network, nil),
-			agenttool.New(storage, nil),
-			agenttool.New(rbac, nil),
-			agenttool.New(security, nil),
-			agenttool.New(events, nil),
-			agenttool.New(nodes, nil),
+			agenttool.New(capacity, nil),
+			agenttool.New(admission, nil),
+			agenttool.New(quota, nil),
+			agenttool.New(dependency, nil),
+			agenttool.New(scheduling, nil),
+			agenttool.New(networkPolicy, nil),
+			agenttool.New(storageCompat, nil),
 		},
 	})
 }
