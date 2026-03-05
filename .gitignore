@@ -2,4 +2,7 @@
 .envrc
 *swp
 bin/
+/server
+frontend/node_modules/
+frontend/dist/
 

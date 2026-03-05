@@ -189,8 +189,8 @@ export default function App() {
     ) => {
       const { stage, status, text } = ev;
 
-      if (stage === "pipeline" && status === "complete") {
-        onDone();
+      if (stage === "pipeline" && (status === "complete" || status === "connected")) {
+        if (status === "complete") onDone();
         return;
       }
 
@@ -351,7 +351,7 @@ export default function App() {
     setLiveText("");
   };
 
-  const hasStarted = stages.some((s) => s.status !== "idle");
+  const hasStarted = running || done || stages.some((s) => s.status !== "idle");
   const activeStageId = stages.find((s) => s.status === "running")?.id;
 
   return (
