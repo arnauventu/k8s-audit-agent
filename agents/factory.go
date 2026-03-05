@@ -504,31 +504,29 @@ Create a single PR using create_remediation_pr. The plan file should contain:
 - Specific remediation steps for each (copy from the report's Recommendations section)
 - Reference the issue numbers created in step 1
 
-### 3. SLACK — Notification with executive summary
-Use send_slack_message with this structure:
+### 3. SLACK — Send report via send_report_to_slack
+Use send_report_to_slack (NOT send_slack_message) with:
+- pdf_path: "reports/audit-report.pdf"
+- critical_high_issues: list of GitHub issue URLs for critical and high severity findings (from step 1)
+- medium_issues: list of GitHub issue URLs for medium severity findings (from step 1)
+- low_issues: list of GitHub issue URLs for low severity findings (from step 1)
+- pr_url: the PR URL created in step 2
+- report_path: "reports/audit-report.pdf"
 
-*Audit complete: <repo name>*
-<paste the Executive Summary from the report — 2-4 sentences max>
-
-*Verdict:* <DEPLOYABLE / NOT DEPLOYABLE> | *Risk:* <CRITICAL/HIGH/MEDIUM/LOW>
-*Findings:* <N> critical, <N> high, <N> medium, <N> low
-
-*GitHub Issues:* <list issue URLs>
-*Remediation PR:* <PR URL>
-*Full report:* reports/audit-report.md (and .pdf)
+If reports/audit-report.pdf does not exist yet, use convert_markdown_file_to_pdf with markdown_path "reports/audit-report.md" to generate it first.
 
 ## RULES
 - Always read the report first — do not create issues from memory or from what the orchestrator passed
 - Check for existing issues before creating new ones
 - Create the PR last so it can reference issue numbers
-- Keep the Slack message under 3000 characters`,
+- Always use send_report_to_slack for Slack notifications — never send_slack_message`,
 		Tools: []tool.Tool{
 			tools.ListReports(),
 			tools.ReadReport(),
+			tools.ConvertMarkdownFileToPDF(),
 			tools.CreateInspectionIssue(),
 			tools.CreateRemediationPR(),
 			tools.ListRemediationIssues(),
-			tools.SendSlackMessage(),
 			tools.SendReportToSlack(),
 		},
 	})

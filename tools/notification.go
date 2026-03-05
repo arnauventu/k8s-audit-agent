@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -107,16 +108,20 @@ func SendSlackFile() tool.Tool {
 // ── send_report_to_slack ──────────────────────────────────────────────────────
 
 type SendReportToSlackArgs struct {
-	PDFPath         string `json:"pdf_path" description:"Path to the PDF report file to upload"`
-	MarkdownContent string `json:"markdown_content" description:"Full markdown content of the report to send as a code block"`
+	PDFPath            string   `json:"pdf_path" description:"Path to the PDF report file to upload"`
+	CriticalHighIssues []string `json:"critical_high_issues" description:"List of GitHub issue URLs with critical or high severity"`
+	MediumIssues       []string `json:"medium_issues" description:"List of GitHub issue URLs with medium severity"`
+	LowIssues          []string `json:"low_issues" description:"List of GitHub issue URLs with low severity"`
+	PRURL              string   `json:"pr_url" description:"URL of the remediation PR created on GitHub"`
+	ReportPath         string   `json:"report_path" description:"Path to the report file for display (e.g. reports/audit-report.pdf)"`
 }
 
-// SendReportToSlack sends the three Slack messages in guaranteed order:
-// 1. Greeting text, 2. PDF file upload, 3. Markdown as code block.
+// SendReportToSlack sends the audit report to Slack in guaranteed order:
+// 1. Structured summary text (greeting + issues by severity + PR + report path), 2. PDF upload.
 func SendReportToSlack() tool.Tool {
 	t, _ := functiontool.New(functiontool.Config{
 		Name:        "send_report_to_slack",
-		Description: "Send the audit report to Slack in three steps: greeting message, PDF upload, then markdown as a code block. Order is guaranteed.",
+		Description: "Send the audit report to Slack: first a structured summary (greeting + GitHub issues by severity + PR link + report path), then the PDF upload. Order is guaranteed.",
 	}, func(ctx tool.Context, args SendReportToSlackArgs) (Result, error) {
 		webhookURL := os.Getenv("SLACK_WEBHOOK_URL")
 		if webhookURL == "" {
@@ -131,9 +136,39 @@ func SendReportToSlack() tool.Tool {
 			return Result{}, fmt.Errorf("SLACK_CHANNEL_ID environment variable is required")
 		}
 
-		// Step 1: greeting
-		if err := slackPostText(webhookURL, "Hello, I'm the AstroReporter, here is your report"); err != nil {
-			return Result{}, fmt.Errorf("sending greeting: %w", err)
+		// Step 1: structured summary message
+		var sb strings.Builder
+		sb.WriteString("Hello, I'm the AstroReporter, here is your report\n\n")
+		sb.WriteString("GitHub Issues:\n")
+		if len(args.CriticalHighIssues) > 0 {
+			sb.WriteString("- Critical/High: ")
+			sb.WriteString(strings.Join(args.CriticalHighIssues, ", "))
+			sb.WriteString("\n")
+		}
+		if len(args.MediumIssues) > 0 {
+			sb.WriteString("- Medium: ")
+			sb.WriteString(strings.Join(args.MediumIssues, ", "))
+			sb.WriteString("\n")
+		}
+		if len(args.LowIssues) > 0 {
+			sb.WriteString("- Low: ")
+			sb.WriteString(strings.Join(args.LowIssues, ", "))
+			sb.WriteString("\n")
+		}
+		if args.PRURL != "" {
+			sb.WriteString("\nRemediation PR: ")
+			sb.WriteString(args.PRURL)
+			sb.WriteString("\n")
+		}
+		reportPath := args.ReportPath
+		if reportPath == "" {
+			reportPath = args.PDFPath
+		}
+		sb.WriteString("Full report: ")
+		sb.WriteString(reportPath)
+
+		if err := slackPostText(webhookURL, sb.String()); err != nil {
+			return Result{}, fmt.Errorf("sending summary: %w", err)
 		}
 
 		// Step 2: PDF upload
@@ -153,18 +188,11 @@ func SendReportToSlack() tool.Tool {
 			return Result{}, fmt.Errorf("completing PDF upload: %w", err)
 		}
 
-		// Step 3: markdown as code block
-		codeBlock := "```\n" + args.MarkdownContent + "\n```"
-		if err := slackPostText(webhookURL, codeBlock); err != nil {
-			return Result{}, fmt.Errorf("sending markdown block: %w", err)
-		}
-
 		return Result{
-			Summary: "Report sent to Slack: greeting + PDF + markdown code block",
+			Summary: "Report sent to Slack: summary message + PDF upload",
 			Items: []Item{
-				{Name: "greeting", Status: "sent"},
+				{Name: "summary", Status: "sent"},
 				{Name: filename, Status: "uploaded"},
-				{Name: "markdown", Status: "sent"},
 			},
 		}, nil
 	})
