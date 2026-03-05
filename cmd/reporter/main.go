@@ -16,14 +16,16 @@ import (
 
 	"github.com/astrokube/hackathon-1-samples/agents"
 	"github.com/astrokube/hackathon-1-samples/config"
-	"github.com/astrokube/hackathon-1-samples/k8s"
 )
 
 func main() {
 	ctx := context.Background()
 
-	if _, err := k8s.Client(); err != nil {
-		log.Fatalf("Failed to connect to Kubernetes cluster: %v", err)
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		log.Fatal("GITHUB_TOKEN environment variable is required")
+	}
+	if os.Getenv("SLACK_WEBHOOK_URL") == "" {
+		log.Fatal("SLACK_WEBHOOK_URL environment variable is required")
 	}
 
 	model, err := gemini.NewModel(ctx, config.ModelName("reporter"), &genai.ClientConfig{

@@ -12,37 +12,35 @@
 ## Phase 1 — New tools
 
 ### `tools/repo.go` — GitHub repo reading
-- [ ] `get_repo_info` — metadata: default branch, language breakdown, topics, visibility, last push
-- [ ] `list_repo_directory` — list files/dirs at a path (`owner`, `repo`, `path`, `ref`)
-- [ ] `read_repo_file` — fetch file content via GitHub API, base64-decode, size-limit to 100KB
-- [ ] `get_repo_tree` — recursive file listing (all paths in the repo, useful for overview)
-- [ ] `scan_repo_for_secrets` — read files and apply regex patterns: AWS keys, GH tokens, private keys, generic passwords, JWTs
+- [x] `get_repo_info` — metadata: default branch, language breakdown, topics, visibility, last push
+- [x] `list_repo_directory` — list files/dirs at a path (`owner`, `repo`, `path`, `ref`)
+- [x] `read_repo_file` — fetch file content via GitHub API, base64-decode, size-limit to 100KB
+- [x] `get_repo_tree` — recursive file listing (all paths in the repo, useful for overview)
+- [x] `scan_repo_for_secrets` — read files and apply regex patterns: AWS keys, GH tokens, private keys, generic passwords, JWTs
 
 ### `tools/report.go` — Report generation
-- [ ] `write_markdown_report` — write content to `reports/audit.md`, create dir if missing
-- [ ] `convert_report_to_pdf` — shell out to `pandoc reports/audit.md -o reports/audit.pdf`; return graceful error if pandoc not found
+- [x] `save_report_markdown` — write content to `reports/<filename>.md`, create dir if missing
+- [x] `save_report_pdf` — render markdown to PDF using `go-pdf/fpdf` (no external dependencies)
 
 ### `tools/notification.go` — Slack
-- [ ] `send_slack_message` — POST to `SLACK_WEBHOOK_URL` with a message payload; include report summary and links to GH issues
+- [x] `send_slack_message` — POST to `SLACK_WEBHOOK_URL` with a message payload
 
 ---
 
 ## Phase 2 — New specialist agents
 
 ### `agents/repo_agents.go`
-- [ ] `NewCodeSecurityAgent` — reviews source files for OWASP issues, hardcoded secrets, insecure patterns; tools: `read_repo_file`, `scan_repo_for_secrets`
-- [ ] `NewConfigReviewAgent` — reviews Dockerfiles (root user, `latest` tag, no healthcheck), K8s manifests in repo (no limits, privileged, hostNetwork), CI configs; tools: `list_repo_directory`, `read_repo_file`, `get_repo_tree`
+- [x] `NewCodeSecurityAgent` — reviews source files for OWASP issues, hardcoded secrets, insecure patterns; tools: `read_repo_file`, `scan_repo_for_secrets`
+- [x] `NewConfigReviewAgent` — reviews Dockerfiles (root user, `latest` tag, no healthcheck), K8s manifests in repo (no limits, privileged, hostNetwork), CI configs; tools: `list_repo_directory`, `read_repo_file`, `get_repo_tree`
 
 ---
 
 ## Phase 3 — Root agents (`agents/factory.go`)
 
-Replace existing root constructors with:
-
-- [ ] `NewRepoCheckerRoot` — orchestrates `CodeSecurityAgent` + `ConfigReviewAgent`; direct tools: `get_repo_info`, `get_repo_tree`; instruction: read-only, report findings, do not modify anything
-- [ ] `NewPlatformCheckerRoot` — same as existing `NewInspectorRoot` but without `CreateInspectionIssue` tool and with updated instruction (findings go to Correlator, not GitHub)
-- [ ] `NewCorrelatorRoot` — no sub-agents; tools: `write_markdown_report`, `convert_report_to_pdf`; instruction: receives findings from both checkers in context, identifies cross-cutting risks, writes report
-- [ ] `NewReporterRoot` — no sub-agents; tools: `create_inspection_issue`, `create_remediation_pr`, `send_slack_message`; instruction: reads report, creates one GH issue per finding, opens one PR with suggested fixes, sends Slack summary
+- [x] `NewRepoCheckerRoot` — orchestrates `CodeSecurityAgent` + `ConfigReviewAgent`; direct tools: `get_repo_info`, `get_repo_tree`
+- [x] `NewPlatformCheckerRoot` — 7 K8s specialist sub-agents, no issue filing (findings go to Correlator)
+- [x] `NewCorrelatorRoot` — tools: `save_report_markdown`, `save_report_pdf`; cross-references repo + cluster findings, writes report
+- [x] `NewReporterRoot` — tools: `create_inspection_issue`, `create_remediation_pr`, `send_slack_message`
 
 ---
 
@@ -51,17 +49,17 @@ Replace existing root constructors with:
 - [ ] `cmd/repochecker/main.go` — K8s init skipped, GitHub client checked, launch `NewRepoCheckerRoot`
 - [ ] `cmd/platformchecker/main.go` — init K8s client, launch `NewPlatformCheckerRoot`
 - [ ] `cmd/correlator/main.go` — no K8s/GitHub required at startup, launch `NewCorrelatorRoot`
-- [ ] `cmd/reporter/main.go` — GitHub client checked, Slack webhook checked, launch `NewReporterRoot`
-- [ ] `cmd/all/main.go` — wire all 4 agents into `agent.NewMultiLoader` for the ADK UI dropdown
+- [x] `cmd/reporter/main.go` — GitHub client checked, Slack webhook checked, launch `NewReporterRoot`
+- [x] `cmd/all/main.go` — all 4 agents wired into `agent.NewMultiLoader` for the ADK UI dropdown
 
 ---
 
 ## Phase 5 — Config & environment
 
-- [ ] Update `config/config.go` `ModelsConfig` struct: add `RepoChecker`, `PlatformChecker`, `Correlator`, `Reporter` fields; remove old ones
-- [ ] Update `config/config.go` `ModelForAgent` switch to handle new agent names
+- [x] Update `config/config.go` `ModelsConfig` struct: `RepoChecker`, `PlatformChecker`, `Correlator`, `Reporter` fields
+- [x] Update `config/config.go` `ModelForAgent` switch to handle new agent names
 - [ ] Add `config.yaml.example` with all 4 agent model names pre-filled
-- [ ] Document `SLACK_WEBHOOK_URL` and `REPORT_REPO` (the repo where issues/PRs are opened, which may differ from the audited repo) in `CLAUDE.md`
+- [ ] Document `SLACK_WEBHOOK_URL` and `REPORT_REPO` in `CLAUDE.md`
 
 ---
 
