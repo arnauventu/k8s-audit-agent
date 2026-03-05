@@ -83,7 +83,7 @@ agents/
 User: "audit repo X against cluster Y"
          │
          ▼
-┌─────────────────────┐    ┌─────────────────────┐
+┌──────────────────────┐    ┌──────────────────────┐
 │  RepoChecker         │    │  PlatformChecker     │
 │  (repo_checker)      │    │  (platform_checker)  │
 │                      │    │                      │
@@ -105,7 +105,7 @@ User: "audit repo X against cluster Y"
            │                           │
            └─────────────┬─────────────┘
                          ▼
-              ┌─────────────────────┐
+              ┌──────────────────────┐
               │  Correlator          │
               │  (audit_correlator)  │
               │                      │
@@ -120,7 +120,7 @@ User: "audit repo X against cluster Y"
               └──────────┬───────────┘
                          │
                          ▼
-              ┌─────────────────────┐
+              ┌──────────────────────┐
               │  Reporter            │
               │  (audit_reporter)    │
               │                      │
@@ -130,7 +130,7 @@ User: "audit repo X against cluster Y"
               │    (suggested fixes) │
               │  - Slack message     │
               │    (report summary)  │
-              └─────────────────────┘
+              └──────────────────────┘
 ```
 
 - **RepoChecker** (`repo_checker`): Routes to specialist sub-agents that read repo files, scan for secrets, review Dockerfiles and K8s manifests in the repo, and identify code-level security issues
