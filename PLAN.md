@@ -46,9 +46,9 @@
 
 ## Phase 4 — Command entrypoints
 
-- [ ] `cmd/repochecker/main.go` — K8s init skipped, GitHub client checked, launch `NewRepoCheckerRoot`
-- [ ] `cmd/platformchecker/main.go` — init K8s client, launch `NewPlatformCheckerRoot`
-- [ ] `cmd/correlator/main.go` — no K8s/GitHub required at startup, launch `NewCorrelatorRoot`
+- [x] `cmd/repochecker/main.go` — K8s init skipped, GitHub client checked, launch `NewRepoCheckerRoot`
+- [x] `cmd/platformchecker/main.go` — init K8s client, launch `NewPlatformCheckerRoot`
+- [x] `cmd/correlator/main.go` — no K8s/GitHub required at startup, launch `NewCorrelatorRoot`
 - [x] `cmd/reporter/main.go` — GitHub client checked, Slack webhook checked, launch `NewReporterRoot`
 - [x] `cmd/all/main.go` — all 4 agents wired into `agent.NewMultiLoader` for the ADK UI dropdown
 

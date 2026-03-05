@@ -13,6 +13,8 @@ Multi-agent application and Kubernetes audit system built with Google ADK. Four 
 
 ## Commands
 
+> **Important:** Always build binaries into `bin/`. That directory is gitignored. Never build binaries into the repo root or any other location.
+
 ```bash
 # Run individual agents
 go run ./cmd/repochecker/
@@ -20,14 +22,12 @@ go run ./cmd/platformchecker/
 go run ./cmd/correlator/
 go run ./cmd/reporter/
 
-# Build all binaries
-go build ./...
-
-# Build individual agents
-go build -o repochecker ./cmd/repochecker/
-go build -o platformchecker ./cmd/platformchecker/
-go build -o correlator ./cmd/correlator/
-go build -o reporter ./cmd/reporter/
+# Build all binaries — always output to bin/ (which is gitignored)
+mkdir -p bin
+go build -o bin/repochecker ./cmd/repochecker/
+go build -o bin/platformchecker ./cmd/platformchecker/
+go build -o bin/correlator ./cmd/correlator/
+go build -o bin/reporter ./cmd/reporter/
 
 # Tidy dependencies
 go mod tidy
