@@ -48,7 +48,7 @@ func main() {
 		log.Fatalf("Failed to create reporter model: %v", err)
 	}
 
-	repoCheckerAgent, err := agents.NewRepoCheckerRoot(repoCheckerModel)
+	repoCheckerAgent, err := agents.NewRepoCheckerRoot(repoCheckerModel, os.Getenv("GITHUB_REPO"))
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker agent: %v", err)
 	}

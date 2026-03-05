@@ -24,6 +24,9 @@ func main() {
 	if os.Getenv("GITHUB_TOKEN") == "" {
 		log.Fatal("GITHUB_TOKEN environment variable is required")
 	}
+	if os.Getenv("GITHUB_REPO") == "" {
+		log.Fatal("GITHUB_REPO environment variable is required (format: owner/repo)")
+	}
 
 	model, err := gemini.NewModel(ctx, config.ModelName("repo_checker"), &genai.ClientConfig{
 		APIKey: os.Getenv("GOOGLE_API_KEY"),
@@ -32,7 +35,7 @@ func main() {
 		log.Fatalf("Failed to create repo_checker model: %v", err)
 	}
 
-	repoCheckerAgent, err := agents.NewRepoCheckerRoot(model)
+	repoCheckerAgent, err := agents.NewRepoCheckerRoot(model, os.Getenv("GITHUB_REPO"))
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker agent: %v", err)
 	}

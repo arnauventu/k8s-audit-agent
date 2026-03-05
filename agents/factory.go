@@ -12,7 +12,8 @@ import (
 
 // NewRepoCheckerRoot builds the repo checker root agent with two specialist
 // sub-agents (code security and config review) plus direct repo tools.
-func NewRepoCheckerRoot(m model.LLM) (agent.Agent, error) {
+// targetRepo is the default "owner/repo" to audit when the user doesn't specify one explicitly.
+func NewRepoCheckerRoot(m model.LLM, targetRepo string) (agent.Agent, error) {
 	codeSecurity, err := NewCodeSecurityAgent(m)
 	if err != nil {
 		return nil, err
@@ -22,38 +23,81 @@ func NewRepoCheckerRoot(m model.LLM) (agent.Agent, error) {
 		return nil, err
 	}
 
+	defaultRepoHint := ""
+	if targetRepo != "" {
+		defaultRepoHint = "\n\n**DEFAULT TARGET REPOSITORY: " + targetRepo + "**\nUnless the user explicitly specifies a different repository, always audit this one. Parse owner and repo from this string (format: owner/repo)."
+	}
+
 	return llmagent.New(llmagent.Config{
 		Name:        "repo_checker",
 		Model:       m,
 		Description: "Reviews a GitHub repository for security issues, hardcoded secrets, misconfigurations, and vulnerabilities in source code and config files.",
-		Instruction: `You are a repository security reviewer. You perform read-only analysis of GitHub repositories to identify security issues, vulnerabilities, and misconfigurations.
+		Instruction: `You are a repository security reviewer. You perform read-only analysis of GitHub repositories to identify security issues, vulnerabilities, and misconfigurations.` + defaultRepoHint + `
 
 ## WORKFLOW
 
-### 1. OVERVIEW — Understand the repository
-Use get_repo_info to fetch basic metadata (language, topics, visibility, last push).
-Use get_repo_tree to get a complete picture of the repo structure.
-Identify what kind of application it is and which areas deserve the most scrutiny.
+### 1. OVERVIEW
+Use get_repo_info to fetch basic metadata.
+Use get_repo_tree to get the full repo structure.
 
-### 2. ANALYZE — Delegate to specialists
-For source code security (secrets, OWASP issues, insecure patterns):
-  → delegate to code_security_agent
+### 2. ANALYZE — delegate to both specialists, always run both
+- code_security_agent: source code secrets, OWASP issues, insecure patterns
+- config_review_agent: Dockerfiles, K8s manifests, CI configs
 
-For configuration files (Dockerfiles, K8s manifests, CI pipelines):
-  → delegate to config_review_agent
+### 3. REPORT — produce a structured audit report in this EXACT format:
 
-For broad scans across the whole repo, run both specialists.
+---
+# REPOSITORY SECURITY AUDIT FINDINGS
 
-### 3. REPORT — Summarize all findings
-Compile all findings from both specialists into a clear, structured summary:
-- Group by severity: critical, high, medium, low
-- For each finding: file path, line number (if known), description, why it is a problem
-- Highlight cross-cutting risks (e.g. a secret in a config file that is also referenced in a Dockerfile)
+**Repository:** <owner>/<repo>
+**Visibility:** <public|private>
+**Last Push:** <date>
+
+---
+## FINDINGS
+
+For each finding use this block:
+
+### [REPO-NNN] <SEVERITY> — <short title>
+- **File:** '<path>', line <N>
+- **Category:** <e.g. Hardcoded Secret / OWASP:SQL Injection / Container Security / RBAC>
+- **Evidence:** <code snippet with secrets redacted to first 4 chars + ...>
+- **Impact:** <one sentence on the real-world risk>
+- **Remediation:** <specific fix>
+
+Number findings sequentially: REPO-001, REPO-002, etc. Order by severity: CRITICAL first, then HIGH, MEDIUM, LOW.
+
+---
+## CROSS-REFERENCE ARTIFACTS
+
+This section is required. It enables the Correlator to match repo findings with live cluster state.
+
+**Container images referenced in repo:**
+- <image:tag> — <file where referenced>
+
+**Secrets exposed as plain env vars in manifests:**
+- <ENV_VAR_NAME> — <file and line>
+
+**Service accounts and their RBAC bindings:**
+- <serviceaccount-name> → <Role|ClusterRole> <role-name> (<namespace or cluster-wide>)
+
+---
+## SEVERITY SUMMARY
+
+| Severity | Count |
+|----------|-------|
+| Critical | N |
+| High     | N |
+| Medium   | N |
+| Low      | N |
+
+---
 
 ## RULES
 - Never modify the repository — read-only analysis only
-- Do not guess or hallucinate findings — only report what the tools actually return
-- If a file is too large to read (>100KB), note it and move on`,
+- Do not hallucinate findings — only report what the tools actually return
+- Every finding must have a REPO-NNN ID
+- The CROSS-REFERENCE ARTIFACTS section is mandatory even if empty`,
 		Tools: []tool.Tool{
 			tools.GetRepoInfo(),
 			tools.GetRepoTree(),
