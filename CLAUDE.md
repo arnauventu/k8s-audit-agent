@@ -4,38 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-agent Kubernetes cluster inspector and remediation system built with Google ADK. Four agents form a pipeline using GitHub Issues and PRs as the communication backbone:
+Multi-agent application and Kubernetes audit system built with Google ADK. Four agents form a sequential pipeline — each agent feeds its output into the next:
 
-1. **Inspector** (`cmd/inspector/main.go`): Read-only investigation + GitHub issue filing
-2. **Planner** (`cmd/planner/main.go`): Reads issues, creates remediation plan PRs
-3. **Executor** (`cmd/executor/main.go`): Reads approved PRs, applies remediation plans
-4. **Verifier** (`cmd/verifier/main.go`): Independently verifies fixes, merges/closes PRs
-
-The inspector routes queries to 7 specialist sub-agents and files investigation findings as GitHub issues. The planner reads these issues and creates PRs with detailed remediation plans. After human approval, the executor applies the plan. The verifier independently confirms success and manages the PR lifecycle.
+1. **RepoChecker** (`cmd/repochecker/main.go`): Reviews a GitHub repository for code issues, secrets, misconfigurations, and vulnerabilities
+2. **PlatformChecker** (`cmd/platformchecker/main.go`): Inspects the live Kubernetes cluster for health, security, and configuration issues
+3. **Correlator** (`cmd/correlator/main.go`): Correlates findings from RepoChecker and PlatformChecker, identifies cross-cutting risks, and generates a markdown/PDF report
+4. **Reporter** (`cmd/reporter/main.go`): Distributes the report — creates GitHub Issues, opens a PR with suggested fixes, and sends the report via Slack
 
 ## Commands
 
 ```bash
-# Run the inspector agent
-go run ./cmd/inspector/
-
-# Run the planner agent
-go run ./cmd/planner/
-
-# Run the executor agent
-go run ./cmd/executor/
-
-# Run the verifier agent
-go run ./cmd/verifier/
+# Run individual agents
+go run ./cmd/repochecker/
+go run ./cmd/platformchecker/
+go run ./cmd/correlator/
+go run ./cmd/reporter/
 
 # Build all binaries
 go build ./...
 
 # Build individual agents
-go build -o inspector ./cmd/inspector/
-go build -o planner ./cmd/planner/
-go build -o executor ./cmd/executor/
-go build -o verifier ./cmd/verifier/
+go build -o repochecker ./cmd/repochecker/
+go build -o platformchecker ./cmd/platformchecker/
+go build -o correlator ./cmd/correlator/
+go build -o reporter ./cmd/reporter/
 
 # Tidy dependencies
 go mod tidy
@@ -48,21 +40,22 @@ go vet ./...
 
 - `GOOGLE_API_KEY` — required for Gemini model access. A `.env` file with `export GOOGLE_API_KEY='...'` is gitignored.
 - `KUBECONFIG` — optional, defaults to `~/.kube/config`. In-cluster config is tried first.
-- `GITHUB_REPO` — required, GitHub repo in `owner/name` format.
-- `GITHUB_TOKEN` — required for GitHub issue and PR operations. A personal access token with `repo` scope.
+- `GITHUB_REPO` — required, GitHub repo in `owner/name` format (used as the target repo for RepoChecker and as the destination for Reporter issues/PRs).
+- `GITHUB_TOKEN` — required for GitHub API operations. A personal access token with `repo` scope.
+- `SLACK_WEBHOOK_URL` — required for Reporter Slack notifications. Incoming webhook URL.
 
 ## Architecture
 
 ```
 cmd/
-  inspector/
-    main.go           -- Inspector: main(), model init, specialist agents, root agent, launcher
-  planner/
-    main.go           -- Planner: reads issues, creates remediation plan PRs
-  executor/
-    main.go           -- Executor: reads approved PRs, applies remediation
-  verifier/
-    main.go           -- Verifier: verifies fixes, merges/closes PRs
+  repochecker/
+    main.go           -- RepoChecker: main(), model init, specialist agents, root agent, launcher
+  platformchecker/
+    main.go           -- PlatformChecker: main(), model init, specialist agents, root agent, launcher
+  correlator/
+    main.go           -- Correlator: reads both outputs, generates report
+  reporter/
+    main.go           -- Reporter: creates GH Issues/PR, sends Slack notification
 k8s/
   client.go           -- K8s client-go singleton (sync.Once, in-cluster + kubeconfig fallback)
 tools/
@@ -73,54 +66,79 @@ tools/
   security.go         -- 2 tools: pod security analysis, PSA enforcement
   events.go           -- 2 tools: cluster events, recent events
   nodes.go            -- 3 tools: node status, node resource usage, pod resource usage
-  remediation.go      -- 6 tools: delete pod, rollout restart, scale, cordon/uncordon, delete stuck
-  github.go           -- 7 tools: create inspection issue, create/list/get/close remediation issues, comment on issue, get comments
+  repo.go             -- tools: list repo directory, read file, get repo info, get repo tree, scan for secrets
+  report.go           -- tools: write markdown report, convert to PDF
+  notification.go     -- tools: send Slack message
+  github.go           -- 7 tools: create inspection issue, create/list/get/close issues, comment, get comments
   github_pr.go        -- 8 tools: create/list/get PR, approval status, comment, merge, close, read plan file
 agents/
-  agents.go           -- 7 specialist agent constructors (each returns agent.Agent)
+  agents.go           -- K8s specialist agent constructors (workload, network, storage, rbac, security, events, nodes)
+  repo_agents.go      -- Repo specialist agent constructors (code security, config review)
+  factory.go          -- Root agent constructors for all four pipeline agents
 ```
 
 ### Four-Agent Pipeline
 
 ```
-User query
-    │
-    ▼
-┌─────────────────────┐     ┌──────────────┐
-│  Inspector Agent     │────▶│ GitHub Issue  │
-│  (read-only)         │     │ k8s-remediation
-│  - 7 specialists     │     └──────┬───────┘
-│  - create_inspection │            │
-│    _issue            │            ▼
-└─────────────────────┘     ┌──────────────┐     ┌──────────────┐
-                            │ Planner Agent │────▶│ GitHub PR    │
-                            │ - read issues │     │ + plan file  │
-                            │ - create PR   │     └──────┬───────┘
-                            └──────────────┘            │
-                                                  [Human Approval]
-                                                        │
-                                                        ▼
-                            ┌──────────────┐     ┌──────────────┐
-                            │ Executor Agent│◀────│ Approved PR  │
-                            │ (read+write)  │     └──────────────┘
-                            │ - 6 remediation
-                            │   tools       │
-                            │ - comment PR  │────▶ Execution Report
-                            └──────────────┘            │
-                                                        ▼
-                            ┌──────────────┐     ┌──────────────┐
-                            │ Verifier Agent│◀────│ PR + Report  │
-                            │ - inspect     │     └──────────────┘
-                            │ - verify fixes│
-                            │ - merge/close │────▶ PR Merged + Issue Closed
-                            └──────────────┘
+User: "audit repo X against cluster Y"
+         │
+         ▼
+┌─────────────────────┐    ┌─────────────────────┐
+│  RepoChecker         │    │  PlatformChecker     │
+│  (repo_checker)      │    │  (platform_checker)  │
+│                      │    │                      │
+│  sub-agents:         │    │  sub-agents:         │
+│  - code_security     │    │  - workload_inspector│
+│  - config_review     │    │  - network_inspector │
+│                      │    │  - storage_inspector │
+│  finds:              │    │  - rbac_inspector    │
+│  - secrets/creds     │    │  - security_inspector│
+│  - vuln deps         │    │  - event_inspector   │
+│  - Dockerfile issues │    │  - node_inspector    │
+│  - K8s manifest      │    │                      │
+│    misconfigs        │    │  finds:              │
+│  - code smells       │    │  - unhealthy pods    │
+└──────────┬───────────┘    │  - RBAC issues       │
+           │                │  - security gaps     │
+           │                │  - resource pressure │
+           │                └──────────┬───────────┘
+           │                           │
+           └─────────────┬─────────────┘
+                         ▼
+              ┌─────────────────────┐
+              │  Correlator          │
+              │  (audit_correlator)  │
+              │                      │
+              │  - cross-references  │
+              │    repo + cluster    │
+              │  - prioritizes risks │
+              │  - generates report  │
+              │                      │
+              │  output:             │
+              │  reports/audit.md    │
+              │  reports/audit.pdf   │
+              └──────────┬───────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │  Reporter            │
+              │  (audit_reporter)    │
+              │                      │
+              │  - GitHub Issues     │
+              │    (one per finding) │
+              │  - GitHub PR         │
+              │    (suggested fixes) │
+              │  - Slack message     │
+              │    (report summary)  │
+              └─────────────────────┘
 ```
 
-- **Inspector** (`k8s_cluster_inspector`): Investigates cluster, files GitHub issues with investigation findings (evidence, reasoning, affected resources)
-- **Planner** (`k8s_remediation_planner`): Reads open issues, creates PRs with detailed plan files in `remediation-plans/issue-<N>.md`
-- **Executor** (`k8s_remediation_executor`): Reads approved PRs, applies remediation steps, comments execution results on the PR
-- **Verifier** (`k8s_remediation_verifier`): Independently verifies fixes using inspection tools, merges PR on success or closes on failure
-- **Specialist agents**: Each wraps domain-specific `functiontool.New()` tools and is exposed to the inspector via `agenttool.New(agent, nil)`
+- **RepoChecker** (`repo_checker`): Routes to specialist sub-agents that read repo files, scan for secrets, review Dockerfiles and K8s manifests in the repo, and identify code-level security issues
+- **PlatformChecker** (`platform_checker`): Routes to 7 K8s specialist sub-agents covering workloads, networking, storage, RBAC, security contexts, events, and node health
+- **Correlator** (`audit_correlator`): Consumes findings from both checkers, identifies cross-cutting issues (e.g. a vulnerable image in the repo that is also running in production), assigns severity, and writes `reports/audit.md` (+ PDF if pandoc is available)
+- **Reporter** (`audit_reporter`): Reads the report and findings, creates one GitHub Issue per significant finding, opens a PR with suggested fixes, and posts a summary to Slack
+- **K8s sub-agents**: Each wraps domain-specific `functiontool.New()` tools and is exposed to PlatformChecker via `agenttool.New(agent, nil)`
+- **Repo sub-agents**: Each wraps GitHub content API tools and is exposed to RepoChecker via `agenttool.New(agent, nil)`
 - **K8s client**: Singleton `*kubernetes.Clientset` via `sync.Once`, shared across all tools
 - **Metrics**: Best-effort `metrics-server` client; graceful degradation when unavailable
 - **Tool return format**: All tools return `Result{Summary, Items, Issues}` for consistent LLM consumption
