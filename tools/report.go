@@ -60,6 +60,75 @@ func SaveReportPDF() tool.Tool {
 	return t
 }
 
+type ReadReportArgs struct {
+	Filename string `json:"filename" description:"Filename to read from the reports/ directory, with or without .md extension (e.g. 'repo-findings' or 'repo-findings.md')"`
+}
+
+func ListReports() tool.Tool {
+	t, _ := functiontool.New(functiontool.Config{
+		Name:        "list_reports",
+		Description: "List all markdown report files available in the reports/ directory.",
+	}, func(ctx tool.Context, args struct{}) (Result, error) {
+		entries, err := os.ReadDir("reports")
+		if os.IsNotExist(err) {
+			return Result{Summary: "No reports directory found", Items: []Item{}, Issues: []string{}}, nil
+		}
+		if err != nil {
+			return Result{}, fmt.Errorf("reading reports directory: %w", err)
+		}
+		items := []Item{}
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				info, _ := e.Info()
+				size := int64(0)
+				if info != nil {
+					size = info.Size()
+				}
+				items = append(items, Item{
+					Name:    e.Name(),
+					Status:  "available",
+					Details: fmt.Sprintf("%d bytes", size),
+				})
+			}
+		}
+		return Result{
+			Summary: fmt.Sprintf("%d report(s) available in reports/", len(items)),
+			Items:   items,
+			Issues:  []string{},
+		}, nil
+	})
+	return t
+}
+
+func ReadReport() tool.Tool {
+	t, _ := functiontool.New(functiontool.Config{
+		Name:        "read_report",
+		Description: "Read the full content of a markdown report file from the reports/ directory. Use list_reports first to see available files.",
+	}, func(ctx tool.Context, args ReadReportArgs) (Result, error) {
+		name := args.Filename
+		if !strings.HasSuffix(name, ".md") {
+			name += ".md"
+		}
+		name = filepath.Base(name) // prevent path traversal
+		path := filepath.Join("reports", name)
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return Result{}, fmt.Errorf("reading report %s: %w", path, err)
+		}
+		return Result{
+			Summary: fmt.Sprintf("Read %s (%d bytes)", path, len(data)),
+			Items: []Item{{
+				Name:    name,
+				Status:  "ok",
+				Details: string(data),
+			}},
+			Issues: []string{},
+		}, nil
+	})
+	return t
+}
+
 // resolveReportPath returns reports/<filename><ext>, generating a timestamped name if empty.
 func resolveReportPath(filename, ext string) (string, error) {
 	if filename == "" {

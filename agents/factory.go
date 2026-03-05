@@ -119,10 +119,12 @@ Required even if empty. Used by the Correlator to match repo findings against li
 - Never modify the repository — read-only analysis only
 - Do not hallucinate findings — only report what the tools return
 - Every security finding must have a REPO-NNN ID
-- The CROSS-REFERENCE ARTIFACTS section is mandatory`,
+- The CROSS-REFERENCE ARTIFACTS section is mandatory
+- **Always save the completed report** using save_report_markdown with filename "repo-findings" so the Correlator can read it`,
 		Tools: []tool.Tool{
 			tools.GetRepoInfo(),
 			tools.GetRepoTree(),
+			tools.SaveReportMarkdown(),
 			agenttool.New(deploymentReadiness, nil),
 			agenttool.New(configReview, nil),
 			agenttool.New(codeSecurity, nil),
@@ -207,11 +209,43 @@ Then provide an overall verdict:
 - Never modify the cluster — read-only analysis only
 - Do not file GitHub issues — that is the Reporter agent's job
 - Be specific: name the resource, namespace, and constraint that causes each BLOCK or WARN
-- Report findings clearly so the Correlator can cross-reference them with repo findings`,
+- **Always save the completed report** using save_report_markdown with filename "platform-findings" so the Correlator can read it
+
+## REPORT FORMAT
+
+Save a structured report with these sections:
+
+# PLATFORM CHECK REPORT
+
+## Overall Verdict: DEPLOYABLE / NOT DEPLOYABLE
+
+## Check Results
+| Check | Result | Details |
+|-------|--------|---------|
+| Capacity | BLOCK/WARN/PASS | |
+| Admission (PSA) | BLOCK/WARN/PASS | |
+| Quotas | BLOCK/WARN/PASS | |
+| API/CRD Dependencies | BLOCK/WARN/PASS | |
+| Scheduling | BLOCK/WARN/PASS | |
+| Network Policies | BLOCK/WARN/PASS | |
+| Storage | BLOCK/WARN/PASS | |
+
+## Blocking Issues
+List every BLOCK finding here with full details.
+
+## Warnings
+List every WARN finding here with full details.
+
+## Cluster Context
+- Kubernetes version:
+- Target namespace:
+- Available storage classes:
+- Available ingress classes:`,
 		Tools: []tool.Tool{
 			tools.GetClusterVersion(),
 			tools.ListNamespaces(),
 			tools.ListNodes(),
+			tools.SaveReportMarkdown(),
 			agenttool.New(capacity, nil),
 			agenttool.New(admission, nil),
 			agenttool.New(quota, nil),
@@ -229,45 +263,82 @@ func NewCorrelatorRoot(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        "audit_correlator",
 		Model:       m,
-		Description: "Correlates findings from the RepoChecker and PlatformChecker, identifies cross-cutting risks, and generates a markdown/PDF audit report.",
-		Instruction: `You are an audit correlator. You receive findings from two sources — a repository review and a live Kubernetes cluster inspection — and produce a comprehensive audit report.
+		Description: "Reads the saved findings from RepoChecker and PlatformChecker, correlates cross-cutting risks, and produces the final audit report as markdown and PDF.",
+		Instruction: `You are an audit correlator. Your job is to read the findings written by the RepoChecker and PlatformChecker agents, cross-reference them, and produce a unified audit report.
 
 ## WORKFLOW
 
-### 1. CORRELATE — Find cross-cutting risks
-Look for findings that span both the repo and the cluster, for example:
-- An image referenced in a Dockerfile or K8s manifest in the repo that is also running in production with known vulnerabilities
-- Resource limits missing both in the repo manifests AND in the live cluster
-- A secret found hardcoded in the repo that corresponds to a service running in the cluster
-- RBAC misconfigurations defined in repo manifests that are reflected in the live cluster
+### 1. LOAD FINDINGS
 
-These cross-cutting findings are the highest-value output — highlight them prominently.
+Use list_reports to see what files are available in reports/.
+Then use read_report to load each of:
+- "repo-findings" — the repository security and deployment readiness audit
+- "platform-findings" — the cluster deployment compatibility check
 
-### 2. PRIORITIZE — Assign severity
-For every finding (repo-only, cluster-only, or cross-cutting), assign a severity:
-- critical: active security breach risk or data-loss potential
-- high: significant security gap or service degradation
-- medium: misconfiguration that should be fixed but is not immediately dangerous
-- low: best-practice deviation or informational
+If either file is missing, note it prominently in the report and work with what is available.
 
-### 3. WRITE — Generate the report
-Use save_report_markdown to write the audit report. Structure it as:
+### 2. CORRELATE — Find cross-cutting risks
 
-# Audit Report: <repo name> / <cluster name>
+Read both reports carefully. Look for findings where the repo and the cluster interact:
 
-## Executive Summary
-2-3 sentences covering the overall risk posture and the most critical findings.
+**Deployment blockers (highest priority):**
+- PlatformChecker reports BLOCK on a check, AND RepoChecker confirms the app has that requirement
+  → e.g. cluster enforces restricted PSA + repo manifest runs as root = deployment WILL fail
+  → e.g. required CRD missing in cluster + app references that CRD = deployment WILL fail
 
-## Cross-Cutting Findings
-Issues that appear in both the repository and the live cluster. These are the highest priority.
+**Security compounding:**
+- Secret hardcoded in repo + same service is running in the cluster = active exposure, not just a code smell
+- RBAC wildcard in repo manifests + those roles are already applied in cluster = elevated blast radius
 
-## Repository Findings
-Issues found exclusively in the repository (code, Dockerfiles, manifests, CI).
+**Misconfiguration confirmed in both:**
+- Resource limits missing in repo manifests + node capacity already tight = OOM risk at deploy time
+- Latest image tag in repo + no image pull policy = unpredictable upgrades in the cluster
 
-## Platform Findings
-Issues found exclusively in the live cluster (runtime state, RBAC, events, nodes).
+**Deployment readiness gaps matched to cluster state:**
+- Missing readiness probe in repo + namespace has strict quota = pods will consume quota but never become ready
+- No .dockerignore + private registry required by cluster admission = image build may fail
 
-## Risk Summary Table
+### 3. WRITE — Generate the final report
+
+Use save_report_markdown with filename "audit-report" for the combined report.
+Use save_report_pdf with filename "audit-report" for the PDF version.
+
+Structure the report as:
+
+---
+# AUDIT REPORT
+
+**Date:** <today>
+**Repository:** <from repo-findings>
+**Cluster:** <Kubernetes version from platform-findings>
+**Overall Risk:** CRITICAL / HIGH / MEDIUM / LOW (worst severity found)
+**Deployment Verdict:** READY / NOT READY / BLOCKED (combine repo readiness + platform verdict)
+
+---
+## EXECUTIVE SUMMARY
+2–4 sentences. State the overall risk posture, whether deployment is blocked and why, and the single most critical issue.
+
+---
+## CROSS-CUTTING FINDINGS
+Issues where repo and cluster findings interact. These are the highest-value findings.
+For each: state what the repo shows, what the cluster shows, and the combined impact.
+
+---
+## DEPLOYMENT BLOCKERS
+All findings that would prevent successful deployment (from either source).
+Include both PlatformChecker BLOCK results and RepoChecker FAIL results.
+
+---
+## SECURITY FINDINGS
+All REPO-NNN security findings from the repository audit, preserved with their IDs.
+
+---
+## PLATFORM FINDINGS
+All BLOCK/WARN findings from the platform check that are not already in blockers above.
+
+---
+## RISK SUMMARY
+
 | Severity | Count |
 |----------|-------|
 | Critical | N |
@@ -275,16 +346,20 @@ Issues found exclusively in the live cluster (runtime state, RBAC, events, nodes
 | Medium   | N |
 | Low      | N |
 
-## Recommendations
-Prioritized action list, most critical first.
+---
+## RECOMMENDATIONS
+Prioritized action list. Most critical first. Be specific — name the file, line, resource, or namespace.
 
-Then use save_report_pdf to generate a PDF version.
+---
 
 ## RULES
-- Only report findings that were actually provided — do not hallucinate issues
-- Always generate both markdown and PDF
-- Be specific: include resource names, file paths, line numbers, namespaces`,
+- Read both input files before writing — do not produce the report from memory
+- Only report what the input files actually say — no hallucinated findings
+- Preserve REPO-NNN IDs from the repository findings
+- Always produce both markdown and PDF`,
 		Tools: []tool.Tool{
+			tools.ListReports(),
+			tools.ReadReport(),
 			tools.SaveReportMarkdown(),
 			tools.SaveReportPDF(),
 		},
