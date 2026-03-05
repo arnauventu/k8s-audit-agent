@@ -2,10 +2,10 @@
 
 ## Phase 0 — Cleanup existing code
 
-- [ ] Delete `cmd/inspector/`, `cmd/planner/`, `cmd/executor/`, `cmd/verifier/` (replaced by new agents)
-- [ ] Remove `tools/remediation.go` (remediation actions no longer part of this pipeline)
-- [ ] Update `config/config.go` — replace `Inspector/Planner/Executor/Verifier` model fields with `RepoChecker/PlatformChecker/Correlator/Reporter`
-- [ ] Update `cmd/all/main.go` to wire the 4 new agents
+- [x] Delete `cmd/inspector/`, `cmd/planner/`, `cmd/executor/`, `cmd/verifier/` (replaced by new agents)
+- [x] Remove `tools/remediation.go` (remediation actions no longer part of this pipeline)
+- [x] Update `config/config.go` — replace `Inspector/Planner/Executor/Verifier` model fields with `RepoChecker/PlatformChecker/Correlator/Reporter`
+- [x] Update `cmd/all/main.go` to wire the 4 new agents
 
 ---
 

@@ -22,7 +22,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Verify K8s connectivity early
+	// Verify K8s connectivity early (required by PlatformChecker)
 	if _, err := k8s.Client(); err != nil {
 		log.Fatalf("Failed to connect to Kubernetes cluster: %v", err)
 	}
@@ -31,48 +31,45 @@ func main() {
 		APIKey: os.Getenv("GOOGLE_API_KEY"),
 	}
 
-	// Create a model per agent (each may use a different model via config)
-	inspectorModel, err := gemini.NewModel(ctx, config.ModelName("inspector"), clientConfig)
+	repoCheckerModel, err := gemini.NewModel(ctx, config.ModelName("repo_checker"), clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to create inspector model: %v", err)
+		log.Fatalf("Failed to create repo_checker model: %v", err)
 	}
-	plannerModel, err := gemini.NewModel(ctx, config.ModelName("planner"), clientConfig)
+	platformCheckerModel, err := gemini.NewModel(ctx, config.ModelName("platform_checker"), clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to create planner model: %v", err)
+		log.Fatalf("Failed to create platform_checker model: %v", err)
 	}
-	executorModel, err := gemini.NewModel(ctx, config.ModelName("executor"), clientConfig)
+	correlatorModel, err := gemini.NewModel(ctx, config.ModelName("correlator"), clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to create executor model: %v", err)
+		log.Fatalf("Failed to create correlator model: %v", err)
 	}
-	verifierModel, err := gemini.NewModel(ctx, config.ModelName("verifier"), clientConfig)
+	reporterModel, err := gemini.NewModel(ctx, config.ModelName("reporter"), clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to create verifier model: %v", err)
-	}
-
-	// Build all 4 root agents
-	inspectorAgent, err := agents.NewInspectorRoot(inspectorModel)
-	if err != nil {
-		log.Fatalf("Failed to create inspector agent: %v", err)
-	}
-	plannerAgent, err := agents.NewPlannerRoot(plannerModel)
-	if err != nil {
-		log.Fatalf("Failed to create planner agent: %v", err)
-	}
-	executorAgent, err := agents.NewExecutorRoot(executorModel)
-	if err != nil {
-		log.Fatalf("Failed to create executor agent: %v", err)
-	}
-	verifierAgent, err := agents.NewVerifierRoot(verifierModel)
-	if err != nil {
-		log.Fatalf("Failed to create verifier agent: %v", err)
+		log.Fatalf("Failed to create reporter model: %v", err)
 	}
 
-	// Serve all agents via a single launcher with agent selector dropdown
+	repoCheckerAgent, err := agents.NewRepoCheckerRoot(repoCheckerModel)
+	if err != nil {
+		log.Fatalf("Failed to create repo_checker agent: %v", err)
+	}
+	platformCheckerAgent, err := agents.NewPlatformCheckerRoot(platformCheckerModel)
+	if err != nil {
+		log.Fatalf("Failed to create platform_checker agent: %v", err)
+	}
+	correlatorAgent, err := agents.NewCorrelatorRoot(correlatorModel)
+	if err != nil {
+		log.Fatalf("Failed to create correlator agent: %v", err)
+	}
+	reporterAgent, err := agents.NewReporterRoot(reporterModel)
+	if err != nil {
+		log.Fatalf("Failed to create reporter agent: %v", err)
+	}
+
 	agentLoader, err := agent.NewMultiLoader(
-		inspectorAgent,
-		plannerAgent,
-		executorAgent,
-		verifierAgent,
+		repoCheckerAgent,
+		platformCheckerAgent,
+		correlatorAgent,
+		reporterAgent,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create agent loader: %v", err)
