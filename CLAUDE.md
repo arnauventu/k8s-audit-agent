@@ -40,7 +40,8 @@ go vet ./...
 
 - `GOOGLE_API_KEY` — required for Gemini model access. A `.env` file with `export GOOGLE_API_KEY='...'` is gitignored.
 - `KUBECONFIG` — optional, defaults to `~/.kube/config`. In-cluster config is tried first.
-- `GITHUB_REPO` — required, GitHub repo in `owner/name` format (used as the target repo for RepoChecker and as the destination for Reporter issues/PRs).
+- `GITHUB_REPO` — required by RepoChecker, in `owner/name` format. This is the **target repo being audited**.
+- `REPORT_REPO` — required by Reporter, in `owner/name` format. This is the repo where GitHub Issues and PRs are created. Can be the same as `GITHUB_REPO` or a separate ops/security repo.
 - `GITHUB_TOKEN` — required for GitHub API operations. A personal access token with `repo` scope.
 - `SLACK_WEBHOOK_URL` — required for Reporter Slack notifications. Incoming webhook URL.
 

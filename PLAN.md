@@ -58,17 +58,17 @@
 
 - [x] Update `config/config.go` `ModelsConfig` struct: `RepoChecker`, `PlatformChecker`, `Correlator`, `Reporter` fields
 - [x] Update `config/config.go` `ModelForAgent` switch to handle new agent names
-- [ ] Add `config.yaml.example` with all 4 agent model names pre-filled
-- [ ] Document `SLACK_WEBHOOK_URL` and `REPORT_REPO` in `CLAUDE.md`
+- [x] Add `config.yaml.example` with all 4 agent model names pre-filled
+- [x] Document `SLACK_WEBHOOK_URL` and `REPORT_REPO` in `CLAUDE.md`
 
 ---
 
 ## Phase 6 — Validation
 
-- [ ] `go build ./...` passes with no errors
-- [ ] `go vet ./...` passes clean
-- [ ] Run RepoChecker against a test repo, verify findings are printed
-- [ ] Run PlatformChecker against the local cluster, verify findings are printed
+- [x] `go build ./...` passes with no errors
+- [x] `go vet ./...` passes clean
+- [x] Run RepoChecker against a test repo, verify findings are printed
+- [x] Run PlatformChecker against the local cluster, verify findings are printed
 - [ ] Run Correlator with findings from both, verify `reports/audit.md` is written
 - [ ] Run Reporter, verify GH issue is created and Slack message is sent
 - [ ] Run `cmd/all/` and verify all 4 agents appear in the ADK UI dropdown

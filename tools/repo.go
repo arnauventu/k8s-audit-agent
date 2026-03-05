@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
@@ -203,8 +202,7 @@ func ReadRepoFile() tool.Tool {
 			return Result{}, fmt.Errorf("file %s is %d bytes, exceeds 100 KB limit", args.Path, file.GetSize())
 		}
 
-		rawContent, _ := file.GetContent()
-		content, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(rawContent, "\n", ""))
+		content, err := file.GetContent()
 		if err != nil {
 			return Result{}, fmt.Errorf("failed to decode file content: %w", err)
 		}
@@ -214,7 +212,7 @@ func ReadRepoFile() tool.Tool {
 			Items: []Item{{
 				Name:    args.Path,
 				Status:  "file",
-				Details: string(content),
+				Details: content,
 			}},
 			Issues: []string{},
 		}, nil
@@ -320,14 +318,12 @@ func ScanRepoForSecrets() tool.Tool {
 				continue
 			}
 
-			rawContent, _ := file.GetContent()
-			raw, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(rawContent, "\n", ""))
+			content, err := file.GetContent()
 			if err != nil {
 				continue
 			}
 
 			scanned++
-			content := string(raw)
 			lines := strings.Split(content, "\n")
 
 			for _, sp := range secretPatterns {
