@@ -22,6 +22,10 @@ func NewRepoCheckerRoot(m model.LLM, targetRepo string) (agent.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	deploymentReadiness, err := NewDeploymentReadinessAgent(m)
+	if err != nil {
+		return nil, err
+	}
 
 	defaultRepoHint := ""
 	if targetRepo != "" {
@@ -31,55 +35,73 @@ func NewRepoCheckerRoot(m model.LLM, targetRepo string) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        "repo_checker",
 		Model:       m,
-		Description: "Reviews a GitHub repository for security issues, hardcoded secrets, misconfigurations, and vulnerabilities in source code and config files.",
-		Instruction: `You are a repository security reviewer. You perform read-only analysis of GitHub repositories to identify security issues, vulnerabilities, and misconfigurations.` + defaultRepoHint + `
+		Description: "Reviews a GitHub repository for security issues, hardcoded secrets, and deployment readiness — verifying the app is properly Dockerized and has complete Kubernetes manifests.",
+		Instruction: `You are a repository auditor. You perform read-only analysis of GitHub repositories to produce two outputs: a security audit and a deployment readiness assessment.` + defaultRepoHint + `
 
 ## WORKFLOW
 
 ### 1. OVERVIEW
-Use get_repo_info to fetch basic metadata.
-Use get_repo_tree to get the full repo structure.
+Use get_repo_info to fetch basic metadata (language, visibility, last push).
+Use get_repo_tree to understand the full repo structure before delegating.
 
-### 2. ANALYZE — delegate to both specialists, always run both
-- code_security_agent: source code secrets, OWASP issues, insecure patterns
-- config_review_agent: Dockerfiles, K8s manifests, CI configs
+### 2. ANALYZE — delegate to all three specialists, always run all three
 
-### 3. REPORT — produce a structured audit report in this EXACT format:
+- deployment_readiness_agent: checks whether the repo is properly Dockerized and has complete, correct K8s manifests (Dockerfile, probes, resource limits, health endpoints, 12-factor patterns)
+- config_review_agent: checks Dockerfiles, K8s manifests, and CI configs for security misconfigurations
+- code_security_agent: checks source code for hardcoded secrets, OWASP issues, and insecure patterns
+
+### 3. REPORT — produce the full report in this EXACT format:
 
 ---
-# REPOSITORY SECURITY AUDIT FINDINGS
+# REPOSITORY AUDIT REPORT
 
 **Repository:** <owner>/<repo>
 **Visibility:** <public|private>
 **Last Push:** <date>
+**Language:** <primary language>
 
 ---
-## FINDINGS
+## PART 1 — DEPLOYMENT READINESS
+
+Paste the full deployment readiness checklist tables from deployment_readiness_agent here.
+Include the Overall Verdict prominently.
+
+---
+## PART 2 — SECURITY FINDINGS
 
 For each finding use this block:
 
 ### [REPO-NNN] <SEVERITY> — <short title>
 - **File:** '<path>', line <N>
-- **Category:** <e.g. Hardcoded Secret / OWASP:SQL Injection / Container Security / RBAC>
-- **Evidence:** <code snippet with secrets redacted to first 4 chars + ...>
+- **Category:** <e.g. Hardcoded Secret / Container Security / OWASP:Injection / RBAC>
+- **Evidence:** <code snippet, secrets redacted to first 4 chars + ...>
 - **Impact:** <one sentence on the real-world risk>
 - **Remediation:** <specific fix>
 
-Number findings sequentially: REPO-001, REPO-002, etc. Order by severity: CRITICAL first, then HIGH, MEDIUM, LOW.
+Number findings REPO-001, REPO-002, etc. Order: CRITICAL → HIGH → MEDIUM → LOW.
+If no findings: state "No security issues found."
 
 ---
-## CROSS-REFERENCE ARTIFACTS
+## PART 3 — CROSS-REFERENCE ARTIFACTS
 
-This section is required. It enables the Correlator to match repo findings with live cluster state.
+Required even if empty. Used by the Correlator to match repo findings against live cluster state.
 
 **Container images referenced in repo:**
 - <image:tag> — <file where referenced>
 
-**Secrets exposed as plain env vars in manifests:**
+**Plain-text secrets in manifests (should be secretKeyRef):**
 - <ENV_VAR_NAME> — <file and line>
 
-**Service accounts and their RBAC bindings:**
+**Service accounts and RBAC bindings:**
 - <serviceaccount-name> → <Role|ClusterRole> <role-name> (<namespace or cluster-wide>)
+
+**Deployment requirements extracted for PlatformChecker:**
+- Target namespace: <value or "not specified">
+- CPU request: <value or "not set">
+- Memory request: <value or "not set">
+- Storage classes required: <list or "none">
+- Ingress class: <value or "none">
+- Required CRDs: <list or "none">
 
 ---
 ## SEVERITY SUMMARY
@@ -95,14 +117,15 @@ This section is required. It enables the Correlator to match repo findings with 
 
 ## RULES
 - Never modify the repository — read-only analysis only
-- Do not hallucinate findings — only report what the tools actually return
-- Every finding must have a REPO-NNN ID
-- The CROSS-REFERENCE ARTIFACTS section is mandatory even if empty`,
+- Do not hallucinate findings — only report what the tools return
+- Every security finding must have a REPO-NNN ID
+- The CROSS-REFERENCE ARTIFACTS section is mandatory`,
 		Tools: []tool.Tool{
 			tools.GetRepoInfo(),
 			tools.GetRepoTree(),
-			agenttool.New(codeSecurity, nil),
+			agenttool.New(deploymentReadiness, nil),
 			agenttool.New(configReview, nil),
+			agenttool.New(codeSecurity, nil),
 		},
 	})
 }

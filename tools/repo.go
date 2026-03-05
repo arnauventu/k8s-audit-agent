@@ -53,27 +53,49 @@ type secretPattern struct {
 }
 
 var secretPatterns = []secretPattern{
+	// Well-known token formats
 	{"AWS Access Key", regexp.MustCompile(`AKIA[0-9A-Z]{16}`)},
 	{"AWS Secret Key", regexp.MustCompile(`(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]`)},
 	{"GitHub Token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,}`)},
 	{"Private Key", regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----`)},
+	{"Slack Webhook", regexp.MustCompile(`https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+`)},
+	{"SendGrid Key", regexp.MustCompile(`SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}`)},
+	{"JWT Token", regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)},
+	{"Google API Key", regexp.MustCompile(`AIza[0-9A-Za-z\-_]{35}`)},
+
+	// Generic credential patterns (source code and config files)
 	{"Generic API Key", regexp.MustCompile(`(?i)api[_-]?key\s*[=:]\s*['"][A-Za-z0-9_\-]{16,}['"]`)},
 	{"Generic Secret", regexp.MustCompile(`(?i)secret\s*[=:]\s*['"][A-Za-z0-9_\-]{8,}['"]`)},
 	{"Generic Password", regexp.MustCompile(`(?i)password\s*[=:]\s*['"][^'"]{6,}['"]`)},
-	{"JWT Token", regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)},
-	{"Slack Webhook", regexp.MustCompile(`https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+`)},
-	{"SendGrid Key", regexp.MustCompile(`SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}`)},
+
+	// Kubernetes manifest: plain-text env var value (value: "...", not valueFrom)
+	// Matches lines like `        value: "supersecret"` under an env block
+	{"K8s Plain Env Value", regexp.MustCompile(`^\s+value:\s+"[^"]{6,}"`)},
+	// Also catches unquoted: `        value: supersecret`
+	{"K8s Plain Env Value (unquoted)", regexp.MustCompile(`^\s+value:\s+[A-Za-z0-9+/=_\-\.]{8,}\s*$`)},
+
+	// Docker/shell: ENV or ARG with a value set inline
+	{"Dockerfile ENV Secret", regexp.MustCompile(`(?i)^ENV\s+\S*(PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL)\S*\s+\S+`)},
+	{"Dockerfile ARG Secret", regexp.MustCompile(`(?i)^ARG\s+\S*(PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL)\S*=\S+`)},
 }
 
 // sensitiveFileSuffixes lists file name patterns worth scanning.
+// Entries are matched with HasSuffix OR Contains against each file path.
 var sensitiveFileSuffixes = []string{
+	// Explicit secret/credential files
 	".env", ".env.local", ".env.production", ".env.staging",
-	"credentials", "secrets", "secret.yaml", "secret.yml",
+	"credentials", "secrets",
 	".pem", ".key", ".p12", ".pfx",
-	"config.yaml", "config.yml", "config.json",
-	"values.yaml", "values.yml",
-	"docker-compose.yml", "docker-compose.yaml",
+
+	// All YAML/JSON/TOML files — catches deployment manifests, Helm values,
+	// docker-compose, K8s secrets, config maps, and any inline env vars.
+	".yaml", ".yml", ".json", ".toml",
+
+	// CI/CD configs
 	".github/workflows",
+	".gitlab-ci",
+	"Jenkinsfile",
+	".circleci",
 }
 
 // --- Tools ---
