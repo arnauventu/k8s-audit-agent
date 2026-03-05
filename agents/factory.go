@@ -223,10 +223,11 @@ Overall verdict:
 - Never modify the cluster — read-only analysis only
 - Do not file GitHub issues — that is the Reporter agent's job
 - Be specific: name the resource, namespace, and constraint that causes each BLOCK or WARN
-- **Always save the completed report** using save_report_markdown with filename "platform-findings"
+- **Always save the completed report** using save_report_markdown with filename "platform-findings" so the Correlator can read it
 
 ## REPORT FORMAT
 
+Save a structured report with these sections:
 # PLATFORM CHECK REPORT
 
 ## Overall Verdict: DEPLOYABLE / NOT DEPLOYABLE
@@ -528,6 +529,7 @@ Use send_slack_message with this structure:
 			tools.CreateRemediationPR(),
 			tools.ListRemediationIssues(),
 			tools.SendSlackMessage(),
+			tools.SendReportToSlack(),
 		},
 	})
 }

@@ -27,6 +27,12 @@ func main() {
 	if os.Getenv("SLACK_WEBHOOK_URL") == "" {
 		log.Fatal("SLACK_WEBHOOK_URL environment variable is required")
 	}
+	if os.Getenv("SLACK_BOT_TOKEN") == "" {
+		log.Fatal("SLACK_BOT_TOKEN environment variable is required (needed for file uploads)")
+	}
+	if os.Getenv("SLACK_CHANNEL_ID") == "" {
+		log.Fatal("SLACK_CHANNEL_ID environment variable is required (needed for file uploads)")
+	}
 
 	model, err := gemini.NewModel(ctx, config.ModelName("reporter"), &genai.ClientConfig{
 		APIKey: os.Getenv("GOOGLE_API_KEY"),

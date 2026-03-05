@@ -207,6 +207,42 @@ func renderMarkdownToPDF(title, content, path string) error {
 	return pdf.OutputFileAndClose(path)
 }
 
+// ConvertMarkdownFileToPDF reads an existing markdown file and renders it as PDF.
+func ConvertMarkdownFileToPDF() tool.Tool {
+	t, _ := functiontool.New(functiontool.Config{
+		Name:        "convert_markdown_file_to_pdf",
+		Description: "Read an existing markdown (.md) file from disk and convert it to a PDF. Returns the path of the generated PDF.",
+	}, func(ctx tool.Context, args struct {
+		MarkdownPath string `json:"markdown_path" description:"Path to the existing markdown file (e.g. reports/cluster-report-2026-03-05.md)"`
+		Title        string `json:"title" description:"Optional title to display at the top of the PDF. If empty, the filename is used."`
+	}) (Result, error) {
+		content, err := os.ReadFile(args.MarkdownPath)
+		if err != nil {
+			return Result{}, fmt.Errorf("reading markdown file %s: %w", args.MarkdownPath, err)
+		}
+
+		title := args.Title
+		if title == "" {
+			title = filepath.Base(args.MarkdownPath)
+		}
+
+		// Derive PDF path: same directory and base name, .pdf extension
+		base := strings.TrimSuffix(args.MarkdownPath, filepath.Ext(args.MarkdownPath))
+		pdfPath := base + ".pdf"
+
+		if err := os.MkdirAll(filepath.Dir(pdfPath), 0o755); err != nil {
+			return Result{}, fmt.Errorf("creating output directory: %w", err)
+		}
+		if err := renderMarkdownToPDF(title, string(content), pdfPath); err != nil {
+			return Result{}, fmt.Errorf("rendering PDF: %w", err)
+		}
+
+		abs, _ := filepath.Abs(pdfPath)
+		return Result{Summary: fmt.Sprintf("PDF generated at %s", abs)}, nil
+	})
+	return t
+}
+
 // sanitizePDF converts non-Latin1 characters to ASCII equivalents so that
 // go-pdf/fpdf's built-in Arial font (ISO-8859-1) renders them correctly.
 func sanitizePDF(s string) string {
