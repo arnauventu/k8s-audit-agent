@@ -102,6 +102,9 @@ Required even if empty. Used by the Correlator to match repo findings against li
 - Storage classes required: <list or "none">
 - Ingress class: <value or "none">
 - Required CRDs: <list or "none">
+- Secrets referenced (secretKeyRef / secretRef names): <list or "none">
+- Image pull secrets: <list or "none">
+- Service account: <value or "default">
 
 ---
 ## SEVERITY SUMMARY
@@ -164,11 +167,19 @@ func NewPlatformCheckerRoot(m model.LLM) (agent.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	secretExistence, err := NewSecretExistenceChecker(m)
+	if err != nil {
+		return nil, err
+	}
+	rbacCompat, err := NewRBACCompatibilityChecker(m)
+	if err != nil {
+		return nil, err
+	}
 
 	return llmagent.New(llmagent.Config{
 		Name:        "platform_checker",
 		Model:       m,
-		Description: "Inspects a live Kubernetes cluster to determine whether a target application can be successfully deployed. Checks capacity, admission policies, quotas, API/CRD dependencies, scheduling constraints, network policies, and storage.",
+		Description: "Inspects a live Kubernetes cluster to determine whether a target application can be successfully deployed. Checks capacity, admission policies, quotas, API/CRD dependencies, scheduling constraints, network policies, storage, secrets, and RBAC.",
 		Instruction: `You are a Kubernetes deployment compatibility checker. Given an application's requirements and its target namespace, your job is to determine what — if anything — would prevent the application from being deployed successfully on this cluster.
 
 You answer one question: **Can this application be deployed here?**
@@ -181,12 +192,13 @@ The user will provide the application's requirements. Extract:
 - CPU and memory resource requests/limits
 - Storage class names and sizes (if PVCs are needed)
 - Ingress class name (if Ingress resources are used)
-- Required CRDs or custom resources (e.g. cert-manager Certificate, Prometheus ServiceMonitor)
+- Required CRDs or custom resources
 - Required Kubernetes apiVersions
 - nodeSelector, tolerations, or affinity rules (if any)
+- Secrets referenced by the app (secretKeyRef names, envFrom.secretRef names, imagePullSecrets)
+- Service account name used by the app
 
 ### 2. RUN CHECKS — Delegate to specialists
-Run all relevant specialist checks in parallel:
 - capacity_checker: is there enough CPU/memory to schedule the app?
 - admission_checker: will PSA or admission webhooks reject the app?
 - quota_checker: do namespace quotas allow the app to be created?
@@ -194,6 +206,8 @@ Run all relevant specialist checks in parallel:
 - scheduling_checker: are there nodes that match the app's scheduling constraints?
 - network_policy_checker: would existing policies block the app's traffic?
 - storage_compatibility_checker: do required storage classes exist?
+- secret_existence_checker: do all secrets referenced by the app exist in the target namespace?
+- rbac_compatibility_checker: does the app's service account exist and have the right permissions?
 
 ### 3. REPORT — Structured gate results
 For each check, report one of:
@@ -201,7 +215,7 @@ For each check, report one of:
 - **WARN** — deployment may succeed but there is a risk or misconfiguration
 - **PASS** — no issues found for this check
 
-Then provide an overall verdict:
+Overall verdict:
 - **DEPLOYABLE** — all checks pass or warn only
 - **NOT DEPLOYABLE** — at least one check is BLOCK
 
@@ -209,11 +223,9 @@ Then provide an overall verdict:
 - Never modify the cluster — read-only analysis only
 - Do not file GitHub issues — that is the Reporter agent's job
 - Be specific: name the resource, namespace, and constraint that causes each BLOCK or WARN
-- **Always save the completed report** using save_report_markdown with filename "platform-findings" so the Correlator can read it
+- **Always save the completed report** using save_report_markdown with filename "platform-findings"
 
 ## REPORT FORMAT
-
-Save a structured report with these sections:
 
 # PLATFORM CHECK REPORT
 
@@ -229,12 +241,14 @@ Save a structured report with these sections:
 | Scheduling | BLOCK/WARN/PASS | |
 | Network Policies | BLOCK/WARN/PASS | |
 | Storage | BLOCK/WARN/PASS | |
+| Secrets | BLOCK/WARN/PASS | |
+| RBAC / Service Account | BLOCK/WARN/PASS | |
 
 ## Blocking Issues
-List every BLOCK finding here with full details.
+List every BLOCK finding with full details (resource name, namespace, what is missing).
 
 ## Warnings
-List every WARN finding here with full details.
+List every WARN finding with full details.
 
 ## Cluster Context
 - Kubernetes version:
@@ -253,6 +267,8 @@ List every WARN finding here with full details.
 			agenttool.New(scheduling, nil),
 			agenttool.New(networkPolicy, nil),
 			agenttool.New(storageCompat, nil),
+			agenttool.New(secretExistence, nil),
+			agenttool.New(rbacCompat, nil),
 		},
 	})
 }
@@ -366,44 +382,148 @@ Prioritized action list. Most critical first. Be specific — name the file, lin
 	})
 }
 
+// NewAuditOrchestratorRoot builds the top-level orchestrator that runs the full
+// audit pipeline: RepoChecker → PlatformChecker → Correlator → Reporter.
+// Each sub-agent is passed pre-constructed so each can use its own model.
+func NewAuditOrchestratorRoot(
+	m model.LLM,
+	repoChecker agent.Agent,
+	platformChecker agent.Agent,
+	correlator agent.Agent,
+	reporter agent.Agent,
+) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "audit_orchestrator",
+		Model:       m,
+		Description: "Orchestrates the full application audit pipeline: repo security + deployment readiness → cluster compatibility → correlation → reporting.",
+		Instruction: `You are the audit pipeline orchestrator. You coordinate four specialist agents to produce a complete security and deployment audit for a client application.
+
+Run the pipeline in this exact order — each step depends on the previous one.
+
+---
+
+## STEP 1 — Repository audit (repo_checker)
+
+Invoke repo_checker with the target repository.
+
+When it completes, extract the following from its CROSS-REFERENCE ARTIFACTS / Deployment Requirements section:
+- Target namespace
+- CPU and memory requests
+- Storage classes required
+- Ingress class
+- Required CRDs
+- Service account name
+- Secrets referenced (secretKeyRef names, envFrom.secretRef names, imagePullSecrets)
+
+Store these as "app requirements" — you will pass them to the platform checker in step 2.
+
+---
+
+## STEP 2 — Cluster compatibility check (platform_checker)
+
+Invoke platform_checker. In your message to it, include the app requirements you extracted in step 1, for example:
+
+  "The application targets namespace: production
+   CPU request: 500m, memory request: 256Mi
+   Ingress class: nginx
+   Required CRDs: cert-manager.io/v1 Certificate
+   No storage classes required
+   Secrets referenced: db-credentials, redis-password
+   Image pull secret: registry-credentials
+   Service account: my-app-sa"
+
+If no requirements were found in step 1 (e.g. no K8s manifests in the repo), still run the platform checker with a general cluster health check prompt.
+
+---
+
+## STEP 3 — Correlation and report generation (audit_correlator)
+
+Invoke audit_correlator. It will read the saved findings files (repo-findings.md and platform-findings.md) and produce the final audit-report.md and audit-report.pdf.
+
+Tell it: "Both repo-findings.md and platform-findings.md are ready. Please correlate and generate the final audit report."
+
+---
+
+## STEP 4 — Distribution (audit_reporter)
+
+Invoke audit_reporter. It will read the audit report itself from reports/audit-report.md.
+
+Just tell it: "The audit report is ready at reports/audit-report.md. Please create GitHub issues for all findings, open the remediation PR, and send the Slack notification."
+
+---
+
+## RULES
+- Always run all four steps in order — do not skip any
+- Pass the app requirements from step 1 explicitly to step 2 as context
+- If a step fails, report the failure clearly and stop — do not proceed to the next step with incomplete data
+- After all steps complete, provide a brief summary of what was found and what actions were taken`,
+		Tools: []tool.Tool{
+			agenttool.New(repoChecker, nil),
+			agenttool.New(platformChecker, nil),
+			agenttool.New(correlator, nil),
+			agenttool.New(reporter, nil),
+		},
+	})
+}
+
 // NewReporterRoot builds the reporter agent that distributes audit findings
 // via GitHub Issues, a remediation PR, and Slack.
 func NewReporterRoot(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        "audit_reporter",
 		Model:       m,
-		Description: "Distributes audit findings by creating GitHub Issues for each significant finding, opening a PR with suggested fixes, and sending a Slack summary.",
-		Instruction: `You are an audit reporter. You take the findings from the Correlator's audit report and distribute them through the appropriate channels.
+		Description: "Distributes audit findings by creating GitHub Issues for each significant finding, opening a remediation PR, and sending a Slack summary with the executive summary.",
+		Instruction: `You are an audit reporter. You read the full audit report and distribute findings through GitHub and Slack.
 
 ## WORKFLOW
 
+### 0. LOAD THE REPORT
+Before creating any issues, read the full audit report:
+1. Use list_reports to see available report files
+2. Use read_report with filename "audit-report" to load the full report
+
+Extract from the report:
+- Executive Summary (verbatim — used in Slack)
+- Overall Risk level and Deployment Verdict
+- Every finding with its REPO-NNN ID, severity, title, evidence, and remediation
+
 ### 1. GITHUB ISSUES — One issue per significant finding
-For each finding with severity critical or high (and medium if noteworthy), create a GitHub issue using create_inspection_issue.
+Use list_remediation_issues first to avoid creating duplicates.
 
-Each issue should include:
-- A clear title (e.g. "Security: Hardcoded AWS credentials in config/secrets.yaml")
-- Severity level
-- Summary of the finding
-- Evidence (file path + line, or resource name + namespace)
-- Reasoning explaining the risk
-- References to relevant documentation or CVEs
+For each CRITICAL or HIGH finding, create a GitHub issue using create_inspection_issue:
+- Title: "[<SEVERITY>] <short title from report>" (e.g. "[CRITICAL] Hardcoded AWS key in config/secrets.yaml")
+- Body: severity, finding ID, evidence, impact, remediation steps, any relevant CVE
 
-Group low-severity findings into a single "Housekeeping" issue rather than creating one per item.
+For MEDIUM findings: create one grouped issue titled "Audit: Medium severity findings" listing all of them.
+For LOW findings: create one issue titled "Audit: Housekeeping items".
 
-### 2. GITHUB PR — Suggested fixes
-Create a single PR using create_remediation_pr that contains a remediation plan file summarising all suggested fixes. The plan should be human-readable and actionable.
+### 2. GITHUB PR — Remediation plan
+Create a single PR using create_remediation_pr. The plan file should contain:
+- All findings ordered by severity
+- Specific remediation steps for each (copy from the report's Recommendations section)
+- Reference the issue numbers created in step 1
 
-### 3. SLACK — Summary notification
-Use send_slack_message to post a concise summary to the team:
-- Overall risk posture (e.g. "2 critical, 4 high, 6 medium findings")
-- Links to the GitHub issues created
-- Link to the remediation PR
+### 3. SLACK — Notification with executive summary
+Use send_slack_message with this structure:
+
+*Audit complete: <repo name>*
+<paste the Executive Summary from the report — 2-4 sentences max>
+
+*Verdict:* <DEPLOYABLE / NOT DEPLOYABLE> | *Risk:* <CRITICAL/HIGH/MEDIUM/LOW>
+*Findings:* <N> critical, <N> high, <N> medium, <N> low
+
+*GitHub Issues:* <list issue URLs>
+*Remediation PR:* <PR URL>
+*Full report:* reports/audit-report.md (and .pdf)
 
 ## RULES
-- Do not create duplicate issues — check if a similar issue already exists before creating
-- Keep Slack messages concise — a summary with links, not the full report
-- Always create the PR last, after all issues are created, so it can reference their numbers`,
+- Always read the report first — do not create issues from memory or from what the orchestrator passed
+- Check for existing issues before creating new ones
+- Create the PR last so it can reference issue numbers
+- Keep the Slack message under 3000 characters`,
 		Tools: []tool.Tool{
+			tools.ListReports(),
+			tools.ReadReport(),
 			tools.CreateInspectionIssue(),
 			tools.CreateRemediationPR(),
 			tools.ListRemediationIssues(),

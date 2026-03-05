@@ -19,6 +19,7 @@ type Config struct {
 
 type ModelsConfig struct {
 	Default         string `yaml:"default"`
+	Orchestrator    string `yaml:"orchestrator"`
 	RepoChecker     string `yaml:"repo_checker"`
 	PlatformChecker string `yaml:"platform_checker"`
 	Correlator      string `yaml:"correlator"`
@@ -63,6 +64,8 @@ func Load() (*Config, error) {
 func (c *Config) ModelForAgent(agent string) string {
 	var specific string
 	switch agent {
+	case "orchestrator":
+		specific = c.Models.Orchestrator
 	case "repo_checker":
 		specific = c.Models.RepoChecker
 	case "platform_checker":

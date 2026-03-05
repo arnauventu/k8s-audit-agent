@@ -69,10 +69,9 @@ var secretPatterns = []secretPattern{
 	{"Generic Password", regexp.MustCompile(`(?i)password\s*[=:]\s*['"][^'"]{6,}['"]`)},
 
 	// Kubernetes manifest: plain-text env var value (value: "...", not valueFrom)
-	// Matches lines like `        value: "supersecret"` under an env block
+	// Matches lines like `        value: "supersecret"` under an env block.
+	// Only matches quoted strings to reduce false positives from plain config values.
 	{"K8s Plain Env Value", regexp.MustCompile(`^\s+value:\s+"[^"]{6,}"`)},
-	// Also catches unquoted: `        value: supersecret`
-	{"K8s Plain Env Value (unquoted)", regexp.MustCompile(`^\s+value:\s+[A-Za-z0-9+/=_\-\.]{8,}\s*$`)},
 
 	// Docker/shell: ENV or ARG with a value set inline
 	{"Dockerfile ENV Secret", regexp.MustCompile(`(?i)^ENV\s+\S*(PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL)\S*\s+\S+`)},

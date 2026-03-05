@@ -199,13 +199,10 @@ func GetNamespaceQuota() tool.Tool {
 				line := fmt.Sprintf("%s: %s used / %s hard", resource, usedStr, hard.String())
 				parts = append(parts, line)
 
-				// Warn if usage is at or near 100%
-				if !hard.IsZero() {
-					hardVal := hard.Value()
-					usedVal := used.Value()
-					if hardVal > 0 && usedVal >= hardVal {
-						issues = append(issues, fmt.Sprintf("Quota %s/%s: %s is at hard limit (%s/%s)", args.Namespace, q.Name, resource, usedStr, hard.String()))
-					}
+				// Use Cmp to compare quantities correctly — avoids int truncation for millicores
+				// (e.g. Value() on "500m" rounds to 1, causing false positives).
+				if !hard.IsZero() && used.Cmp(hard) >= 0 {
+					issues = append(issues, fmt.Sprintf("Quota %s/%s: %s is at hard limit (%s/%s)", args.Namespace, q.Name, resource, usedStr, hard.String()))
 				}
 			}
 			items = append(items, Item{
@@ -474,6 +471,50 @@ func GetNodeSchedulingInfo() tool.Tool {
 			Summary: fmt.Sprintf("%d nodes total, %d Ready — labels and taints listed for scheduling compatibility check", len(items), ready),
 			Items:   items,
 			Issues:  issues,
+		}, nil
+	})
+	return t
+}
+
+func ListNamespaceSecrets() tool.Tool {
+	t, _ := functiontool.New(functiontool.Config{
+		Name:        "list_namespace_secrets",
+		Description: "Lists Kubernetes Secrets in a namespace by name and type only — no values are returned. Use this to verify that secrets referenced by the app (secretKeyRef, envFrom.secretRef) and imagePullSecrets exist before deployment.",
+	}, func(ctx tool.Context, args NamespaceOnlyArgs) (Result, error) {
+		client, err := k8s.Client()
+		if err != nil {
+			return Result{}, err
+		}
+
+		secrets, err := client.CoreV1().Secrets(args.Namespace).List(context.Background(), metav1.ListOptions{})
+		if err != nil {
+			return Result{}, fmt.Errorf("failed to list secrets in %s: %w", args.Namespace, err)
+		}
+
+		items := make([]Item, 0, len(secrets.Items))
+		pullSecrets := []string{}
+
+		for _, s := range secrets.Items {
+			t := string(s.Type)
+			items = append(items, Item{
+				Name:    s.Name,
+				Status:  t,
+				Details: fmt.Sprintf("namespace: %s, keys: %d", s.Namespace, len(s.Data)),
+			})
+			if s.Type == corev1.SecretTypeDockerConfigJson || s.Type == corev1.SecretTypeDockercfg {
+				pullSecrets = append(pullSecrets, s.Name)
+			}
+		}
+
+		summary := fmt.Sprintf("%d secret(s) in namespace %s", len(items), args.Namespace)
+		if len(pullSecrets) > 0 {
+			summary += fmt.Sprintf(" (%d image pull secret(s): %s)", len(pullSecrets), strings.Join(pullSecrets, ", "))
+		}
+
+		return Result{
+			Summary: summary,
+			Items:   items,
+			Issues:  []string{},
 		}, nil
 	})
 	return t

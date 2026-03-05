@@ -22,7 +22,15 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Verify K8s connectivity early (required by PlatformChecker)
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		log.Fatal("GITHUB_TOKEN environment variable is required")
+	}
+	if os.Getenv("GITHUB_REPO") == "" {
+		log.Fatal("GITHUB_REPO environment variable is required (format: owner/repo)")
+	}
+	if os.Getenv("SLACK_WEBHOOK_URL") == "" {
+		log.Fatal("SLACK_WEBHOOK_URL environment variable is required")
+	}
 	if _, err := k8s.Client(); err != nil {
 		log.Fatalf("Failed to connect to Kubernetes cluster: %v", err)
 	}
@@ -68,6 +76,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create reporter agent: %v", err)
 	}
+
 	orchestratorAgent, err := agents.NewAuditOrchestratorRoot(
 		orchestratorModel,
 		repoCheckerAgent,
@@ -79,21 +88,10 @@ func main() {
 		log.Fatalf("Failed to create orchestrator agent: %v", err)
 	}
 
-	agentLoader, err := agent.NewMultiLoader(
-		orchestratorAgent,
-		repoCheckerAgent,
-		platformCheckerAgent,
-		correlatorAgent,
-		reporterAgent,
-	)
-	if err != nil {
-		log.Fatalf("Failed to create agent loader: %v", err)
-	}
-
 	debugPlugin := loggingplugin.MustNew("debug")
 
 	cfg := &launcher.Config{
-		AgentLoader: agentLoader,
+		AgentLoader: agent.NewSingleLoader(orchestratorAgent),
 		PluginConfig: runner.PluginConfig{
 			Plugins: []*plugin.Plugin{debugPlugin},
 		},

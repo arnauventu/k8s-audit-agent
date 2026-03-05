@@ -301,6 +301,68 @@ Report:
 	})
 }
 
+func NewSecretExistenceChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "secret_existence_checker",
+		Model:       m,
+		Description: "Checks whether Kubernetes Secrets referenced by the app (secretKeyRef, envFrom.secretRef, imagePullSecrets) exist in the target namespace.",
+		Instruction: `You are a secret existence checker. Your job is to verify that all Kubernetes Secrets the app depends on are present in the target namespace before deployment.
+
+Use list_namespace_secrets to retrieve all secrets in the target namespace (names and types only — no values).
+
+Cross-reference the result against the secrets the app requires. These may be provided as context by the orchestrator or extracted from the repo findings. Look for:
+
+**secretKeyRef / secretRef:**
+- Any env var in the deployment that uses secretKeyRef.name or envFrom.secretRef.name
+- Check each referenced secret name against the list returned by list_namespace_secrets
+- BLOCK if any referenced secret is missing from the namespace
+
+**imagePullSecrets:**
+- Any imagePullSecrets field in the pod spec referencing a secret name
+- Check each name against secrets of type kubernetes.io/dockerconfigjson or kubernetes.io/dockercfg
+- BLOCK if a required image pull secret is missing
+
+**Report:**
+- List all secrets present in the namespace (name and type)
+- For each required secret: PRESENT or MISSING
+- BLOCK for any missing required secret (deployment will fail with ImagePullBackOff or CreateContainerConfigError)
+- PASS if all required secrets are present or no secrets are required`,
+		Tools: []tool.Tool{
+			tools.ListNamespaceSecrets(),
+		},
+	})
+}
+
+func NewRBACCompatibilityChecker(m model.LLM) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:        "rbac_compatibility_checker",
+		Model:       m,
+		Description: "Checks whether the service account referenced by the app exists in the target namespace and has the required RBAC permissions.",
+		Instruction: `You are an RBAC compatibility checker. Your job is to verify that the app's service account and permissions are in place in the target namespace.
+
+Use list_service_accounts to check if the service account referenced by the app exists in the target namespace.
+Use list_role_bindings to check what roles are bound to that service account.
+Use list_roles to inspect what permissions those roles grant.
+
+**Service account check:**
+- If the deployment specifies a serviceAccountName, verify it exists in the target namespace
+- BLOCK if the service account does not exist (pod will fail to start)
+- If no serviceAccountName is specified, the default SA will be used — note this
+
+**RBAC permissions check:**
+- List role bindings for the target service account
+- If the app needs specific permissions (e.g. to read ConfigMaps, list pods, create jobs), verify those are granted
+- WARN if the service account uses the default SA with no explicit bindings (may lack needed permissions)
+- WARN if wildcard permissions (* verbs or * resources) are granted — overly permissive
+- PASS if service account exists and has appropriate, least-privilege permissions`,
+		Tools: []tool.Tool{
+			tools.ListServiceAccounts(),
+			tools.ListRoleBindings(),
+			tools.ListRoles(),
+		},
+	})
+}
+
 func NewStorageCompatibilityChecker(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        "storage_compatibility_checker",
