@@ -147,71 +147,191 @@ func resolveReportPath(filename, ext string) (string, error) {
 }
 
 // renderMarkdownToPDF converts a subset of markdown to a PDF using go-pdf/fpdf.
-// Supported syntax: # H1, ## H2, ### H3, - / * bullets, **bold** inline, blank lines.
+// Supported: # H1, ## H2, ### H3, - /* bullets, **bold** inline, tables, blank lines, ---.
 func renderMarkdownToPDF(title, content, path string) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(20, 20, 20)
+	pdf.SetMargins(22, 28, 22)
+	pdf.SetAutoPageBreak(true, 18)
+
+	today := time.Now().Format("January 2, 2006")
+
+	// Footer: page number + date on every page
+	pdf.SetFooterFunc(func() {
+		pdf.SetY(-13)
+		pdf.SetFont("Arial", "I", 8)
+		pdf.SetTextColor(150, 150, 150)
+		pdf.CellFormat(0, 8, fmt.Sprintf("Security & Deployment Audit  |  %s  |  Page %d", today, pdf.PageNo()), "", 0, "C", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+	})
+
 	pdf.AddPage()
 
 	pageW, _ := pdf.GetPageSize()
 	marginL, _, marginR, _ := pdf.GetMargins()
 	contentW := pageW - marginL - marginR
 
-	// Cover header
+	// ── Cover banner ─────────────────────────────────────────────────────────
 	if title != "" {
-		pdf.SetFont("Arial", "B", 22)
-		pdf.MultiCell(contentW, 10, title, "", "C", false)
-		pdf.Ln(6)
-		pdf.SetDrawColor(100, 100, 200)
-		pdf.Line(marginL, pdf.GetY(), pageW-marginR, pdf.GetY())
-		pdf.Ln(6)
+		// Dark indigo banner
+		pdf.SetFillColor(30, 27, 75)
+		pdf.Rect(0, 0, pageW, 44, "F")
+		pdf.SetFont("Arial", "B", 20)
+		pdf.SetTextColor(255, 255, 255)
+		pdf.SetXY(marginL, 10)
+		pdf.CellFormat(contentW, 10, sanitizePDF(title), "", 1, "L", false, 0, "")
+		pdf.SetFont("Arial", "", 9)
+		pdf.SetTextColor(180, 180, 220)
+		pdf.SetX(marginL)
+		pdf.CellFormat(contentW, 6, "Security & Deployment Audit Report  |  "+today, "", 1, "L", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.Ln(10)
+	}
+
+	// severity keyword → badge colours
+	severityBadge := func(line string) (ok bool, fr, fg, fb, tr, tg, tb int, kw string) {
+		up := strings.ToUpper(line)
+		type entry struct {
+			match        string
+			fr, fg, fb   int
+			tr, tg, tb   int
+			label        string
+		}
+		entries := []entry{
+			{"CRITICAL", 220, 38, 38, 255, 255, 255, "CRITICAL"},
+			{"BLOCK", 185, 28, 28, 255, 255, 255, "BLOCK"},
+			{" HIGH", 234, 88, 12, 255, 255, 255, "HIGH"},
+			{"MEDIUM", 202, 138, 4, 255, 255, 255, "MEDIUM"},
+			{"WARN", 180, 120, 0, 255, 255, 255, "WARN"},
+			{"DEPLOYABLE", 21, 128, 61, 255, 255, 255, "PASS"},
+			{"PASS", 21, 128, 61, 255, 255, 255, "PASS"},
+			{" LOW", 71, 85, 105, 255, 255, 255, "LOW"},
+		}
+		for _, e := range entries {
+			if strings.Contains(up, e.match) || strings.HasPrefix(up, strings.TrimSpace(e.match)) {
+				return true, e.fr, e.fg, e.fb, e.tr, e.tg, e.tb, e.label
+			}
+		}
+		return false, 0, 0, 0, 0, 0, 0, ""
 	}
 
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		switch {
+		// ── H1 ──────────────────────────────────────────────────────────────
 		case strings.HasPrefix(line, "# "):
-			pdf.SetFont("Arial", "B", 18)
-			pdf.SetTextColor(30, 30, 100)
-			pdf.MultiCell(contentW, 9, sanitizePDF(strings.TrimPrefix(line, "# ")), "", "L", false)
+			heading := sanitizePDF(strings.TrimPrefix(line, "# "))
+			pdf.SetFillColor(30, 27, 75)
+			pdf.SetTextColor(255, 255, 255)
+			pdf.SetFont("Arial", "B", 14)
+			pdf.SetX(marginL)
+			pdf.MultiCell(contentW, 8, "  "+heading, "", "L", true)
 			pdf.SetTextColor(0, 0, 0)
 			pdf.Ln(3)
 
+		// ── H2 ──────────────────────────────────────────────────────────────
 		case strings.HasPrefix(line, "## "):
-			pdf.SetFont("Arial", "B", 14)
-			pdf.SetTextColor(40, 40, 130)
-			pdf.MultiCell(contentW, 8, sanitizePDF(strings.TrimPrefix(line, "## ")), "", "L", false)
+			heading := sanitizePDF(strings.TrimPrefix(line, "## "))
+			pdf.SetFillColor(238, 237, 255)
+			pdf.SetTextColor(30, 27, 75)
+			pdf.SetFont("Arial", "B", 12)
+			pdf.SetX(marginL)
+			pdf.MultiCell(contentW, 7, "  "+heading, "", "L", true)
 			pdf.SetTextColor(0, 0, 0)
 			pdf.Ln(2)
 
+		// ── H3 ──────────────────────────────────────────────────────────────
 		case strings.HasPrefix(line, "### "):
-			pdf.SetFont("Arial", "B", 12)
-			pdf.SetTextColor(60, 60, 150)
-			pdf.MultiCell(contentW, 7, sanitizePDF(strings.TrimPrefix(line, "### ")), "", "L", false)
+			heading := sanitizePDF(strings.TrimPrefix(line, "### "))
+			if ok, fr, fg, fb, tr, tg, tb, kw := severityBadge(heading); ok {
+				pdf.SetFont("Arial", "B", 9)
+				pdf.SetFillColor(fr, fg, fb)
+				pdf.SetTextColor(tr, tg, tb)
+				pdf.SetX(marginL)
+				badgeW := 28.0
+				pdf.CellFormat(badgeW, 6, " "+kw+" ", "0", 0, "C", true, 0, "")
+				pdf.SetFillColor(255, 255, 255)
+				pdf.SetTextColor(30, 27, 75)
+				pdf.SetFont("Arial", "B", 11)
+				pdf.MultiCell(contentW-badgeW, 6, "  "+heading, "", "L", false)
+			} else {
+				pdf.SetFont("Arial", "B", 11)
+				pdf.SetTextColor(55, 48, 163)
+				pdf.SetX(marginL)
+				pdf.MultiCell(contentW, 6, heading, "", "L", false)
+			}
 			pdf.SetTextColor(0, 0, 0)
 			pdf.Ln(1)
 
+		// ── Bullet ──────────────────────────────────────────────────────────
 		case strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* "):
-			text := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+			body := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
 			pdf.SetFont("Arial", "", 10)
-			pdf.SetX(marginL + 5)
-			pdf.MultiCell(contentW-5, 5.5, "-  "+sanitizePDF(stripInlineMarkdown(text)), "", "L", false)
+			pdf.SetTextColor(30, 30, 30)
+			pdf.SetX(marginL + 4)
+			pdf.MultiCell(contentW-4, 5.5, "-  "+sanitizePDF(stripInlineMarkdown(body)), "", "L", false)
+			pdf.SetTextColor(0, 0, 0)
 
+		// ── Blank line ───────────────────────────────────────────────────────
 		case strings.TrimSpace(line) == "":
-			pdf.Ln(4)
-
-		case strings.HasPrefix(line, "---") || strings.HasPrefix(line, "==="):
-			pdf.SetDrawColor(180, 180, 180)
-			pdf.Line(marginL, pdf.GetY(), pageW-marginR, pdf.GetY())
 			pdf.Ln(3)
 
+		// ── Horizontal rule ──────────────────────────────────────────────────
+		case strings.HasPrefix(line, "---") || strings.HasPrefix(line, "==="):
+			pdf.SetDrawColor(200, 200, 220)
+			pdf.Line(marginL, pdf.GetY()+1, pageW-marginR, pdf.GetY()+1)
+			pdf.SetDrawColor(0, 0, 0)
+			pdf.Ln(4)
+
+		// ── Table row (| col | col |) ────────────────────────────────────────
+		case strings.HasPrefix(strings.TrimSpace(line), "|") && strings.Contains(line, "|"):
+			if strings.Contains(line, "---") {
+				continue // separator row
+			}
+			cols := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+			colW := contentW / float64(len(cols))
+			// Heuristic: header row if the previous cell was at marginL (first row after separator)
+			isHeader := false
+			for _, c := range cols {
+				if strings.TrimSpace(c) != "" {
+					t := strings.ToUpper(strings.TrimSpace(c))
+					if t == "SEVERITY" || t == "CHECK" || t == "FINDING" || t == "CATEGORY" || t == "COUNT" || t == "RESULT" {
+						isHeader = true
+					}
+					break
+				}
+			}
+			if isHeader {
+				pdf.SetFillColor(30, 27, 75)
+				pdf.SetTextColor(255, 255, 255)
+				pdf.SetFont("Arial", "B", 9)
+			} else {
+				pdf.SetFillColor(248, 248, 255)
+				pdf.SetTextColor(20, 20, 60)
+				pdf.SetFont("Arial", "", 9)
+			}
+			pdf.SetX(marginL)
+			for _, col := range cols {
+				pdf.CellFormat(colW, 6, " "+sanitizePDF(strings.TrimSpace(col)), "1", 0, "L", true, 0, "")
+			}
+			pdf.Ln(-1)
+			pdf.SetTextColor(0, 0, 0)
+
+		// ── Default paragraph ────────────────────────────────────────────────
 		default:
 			pdf.SetFont("Arial", "", 10)
+			pdf.SetTextColor(40, 40, 40)
+			pdf.SetX(marginL)
 			pdf.MultiCell(contentW, 5.5, sanitizePDF(stripInlineMarkdown(line)), "", "L", false)
+			pdf.SetTextColor(0, 0, 0)
 		}
 	}
 
 	return pdf.OutputFileAndClose(path)
+}
+
+// ExportTestPDF is a test/dev helper that calls renderMarkdownToPDF directly.
+func ExportTestPDF(title, content, path string) error {
+	return renderMarkdownToPDF(title, content, path)
 }
 
 // ConvertMarkdownFileToPDF reads an existing markdown file and renders it as PDF.
