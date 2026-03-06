@@ -18,12 +18,14 @@ type Config struct {
 }
 
 type ModelsConfig struct {
-	Default         string `yaml:"default"`
-	Orchestrator    string `yaml:"orchestrator"`
-	RepoChecker     string `yaml:"repo_checker"`
-	PlatformChecker string `yaml:"platform_checker"`
-	Correlator      string `yaml:"correlator"`
-	Reporter        string `yaml:"reporter"`
+	Default                    string `yaml:"default"`
+	Orchestrator               string `yaml:"orchestrator"`
+	RepoChecker                string `yaml:"repo_checker"`
+	RepoCheckerSubAgents       string `yaml:"repo_checker_sub_agents"`
+	PlatformChecker            string `yaml:"platform_checker"`
+	PlatformCheckerSubAgents   string `yaml:"platform_checker_sub_agents"`
+	Correlator                 string `yaml:"correlator"`
+	Reporter                   string `yaml:"reporter"`
 }
 
 var (
@@ -68,8 +70,12 @@ func (c *Config) ModelForAgent(agent string) string {
 		specific = c.Models.Orchestrator
 	case "repo_checker":
 		specific = c.Models.RepoChecker
+	case "repo_checker_sub_agents":
+		specific = c.Models.RepoCheckerSubAgents
 	case "platform_checker":
 		specific = c.Models.PlatformChecker
+	case "platform_checker_sub_agents":
+		specific = c.Models.PlatformCheckerSubAgents
 	case "correlator":
 		specific = c.Models.Correlator
 	case "reporter":

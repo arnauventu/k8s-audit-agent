@@ -35,9 +35,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker model: %v", err)
 	}
+	repoCheckerSubModel, err := gemini.NewModel(ctx, config.ModelName("repo_checker_sub_agents"), clientConfig)
+	if err != nil {
+		log.Fatalf("Failed to create repo_checker sub-agent model: %v", err)
+	}
 	platformCheckerModel, err := gemini.NewModel(ctx, config.ModelName("platform_checker"), clientConfig)
 	if err != nil {
 		log.Fatalf("Failed to create platform_checker model: %v", err)
+	}
+	platformCheckerSubModel, err := gemini.NewModel(ctx, config.ModelName("platform_checker_sub_agents"), clientConfig)
+	if err != nil {
+		log.Fatalf("Failed to create platform_checker sub-agent model: %v", err)
 	}
 	correlatorModel, err := gemini.NewModel(ctx, config.ModelName("correlator"), clientConfig)
 	if err != nil {
@@ -52,11 +60,11 @@ func main() {
 		log.Fatalf("Failed to create orchestrator model: %v", err)
 	}
 
-	repoCheckerAgent, err := agents.NewRepoCheckerRoot(repoCheckerModel, os.Getenv("GITHUB_REPO"))
+	repoCheckerAgent, err := agents.NewRepoCheckerRoot(repoCheckerModel, repoCheckerSubModel, os.Getenv("GITHUB_REPO"))
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker agent: %v", err)
 	}
-	platformCheckerAgent, err := agents.NewPlatformCheckerRoot(platformCheckerModel)
+	platformCheckerAgent, err := agents.NewPlatformCheckerRoot(platformCheckerModel, platformCheckerSubModel)
 	if err != nil {
 		log.Fatalf("Failed to create platform_checker agent: %v", err)
 	}

@@ -28,14 +28,18 @@ func main() {
 		log.Fatal("GITHUB_REPO environment variable is required (format: owner/repo)")
 	}
 
-	model, err := gemini.NewModel(ctx, config.ModelName("repo_checker"), &genai.ClientConfig{
-		APIKey: os.Getenv("GOOGLE_API_KEY"),
-	})
+	clientConfig := &genai.ClientConfig{APIKey: os.Getenv("GOOGLE_API_KEY")}
+
+	model, err := gemini.NewModel(ctx, config.ModelName("repo_checker"), clientConfig)
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker model: %v", err)
 	}
+	subModel, err := gemini.NewModel(ctx, config.ModelName("repo_checker_sub_agents"), clientConfig)
+	if err != nil {
+		log.Fatalf("Failed to create repo_checker sub-agent model: %v", err)
+	}
 
-	repoCheckerAgent, err := agents.NewRepoCheckerRoot(model, os.Getenv("GITHUB_REPO"))
+	repoCheckerAgent, err := agents.NewRepoCheckerRoot(model, subModel, os.Getenv("GITHUB_REPO"))
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker agent: %v", err)
 	}

@@ -13,16 +13,17 @@ import (
 // NewRepoCheckerRoot builds the repo checker root agent with two specialist
 // sub-agents (code security and config review) plus direct repo tools.
 // targetRepo is the default "owner/repo" to audit when the user doesn't specify one explicitly.
-func NewRepoCheckerRoot(m model.LLM, targetRepo string) (agent.Agent, error) {
-	codeSecurity, err := NewCodeSecurityAgent(m)
+// subM is the model used for the specialist sub-agents; use a faster model (e.g. Flash) here.
+func NewRepoCheckerRoot(m model.LLM, subM model.LLM, targetRepo string) (agent.Agent, error) {
+	codeSecurity, err := NewCodeSecurityAgent(subM)
 	if err != nil {
 		return nil, err
 	}
-	configReview, err := NewConfigReviewAgent(m)
+	configReview, err := NewConfigReviewAgent(subM)
 	if err != nil {
 		return nil, err
 	}
-	deploymentReadiness, err := NewDeploymentReadinessAgent(m)
+	deploymentReadiness, err := NewDeploymentReadinessAgent(subM)
 	if err != nil {
 		return nil, err
 	}
@@ -136,42 +137,43 @@ Required even if empty. Used by the Correlator to match repo findings against li
 }
 
 // NewPlatformCheckerRoot builds the platform checker root agent. It orchestrates
-// 7 deployment-compatibility specialists to determine whether the target application
+// 9 deployment-compatibility specialists to determine whether the target application
 // can be successfully deployed on this cluster.
-func NewPlatformCheckerRoot(m model.LLM) (agent.Agent, error) {
-	capacity, err := NewCapacityChecker(m)
+// subM is the model used for the specialist sub-agents; use a faster model (e.g. Flash) here.
+func NewPlatformCheckerRoot(m model.LLM, subM model.LLM) (agent.Agent, error) {
+	capacity, err := NewCapacityChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	admission, err := NewAdmissionChecker(m)
+	admission, err := NewAdmissionChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	quota, err := NewQuotaChecker(m)
+	quota, err := NewQuotaChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	dependency, err := NewDependencyChecker(m)
+	dependency, err := NewDependencyChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	scheduling, err := NewSchedulingChecker(m)
+	scheduling, err := NewSchedulingChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	networkPolicy, err := NewNetworkPolicyChecker(m)
+	networkPolicy, err := NewNetworkPolicyChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	storageCompat, err := NewStorageCompatibilityChecker(m)
+	storageCompat, err := NewStorageCompatibilityChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	secretExistence, err := NewSecretExistenceChecker(m)
+	secretExistence, err := NewSecretExistenceChecker(subM)
 	if err != nil {
 		return nil, err
 	}
-	rbacCompat, err := NewRBACCompatibilityChecker(m)
+	rbacCompat, err := NewRBACCompatibilityChecker(subM)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +201,7 @@ The user will provide the application's requirements. Extract:
 - Service account name used by the app
 
 ### 2. RUN CHECKS — Delegate to specialists
+
 - capacity_checker: is there enough CPU/memory to schedule the app?
 - admission_checker: will PSA or admission webhooks reject the app?
 - quota_checker: do namespace quotas allow the app to be created?

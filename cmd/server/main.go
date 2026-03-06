@@ -188,11 +188,11 @@ func main() {
 		return m
 	}
 
-	repoAgent, err := agents.NewRepoCheckerRoot(makeModel("repo_checker"), os.Getenv("GITHUB_REPO"))
+	repoAgent, err := agents.NewRepoCheckerRoot(makeModel("repo_checker"), makeModel("repo_checker_sub_agents"), os.Getenv("GITHUB_REPO"))
 	if err != nil {
 		log.Fatalf("Failed to create repo_checker: %v", err)
 	}
-	platformAgent, err := agents.NewPlatformCheckerRoot(makeModel("platform_checker"))
+	platformAgent, err := agents.NewPlatformCheckerRoot(makeModel("platform_checker"), makeModel("platform_checker_sub_agents"))
 	if err != nil {
 		log.Fatalf("Failed to create platform_checker: %v", err)
 	}

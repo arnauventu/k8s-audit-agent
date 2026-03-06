@@ -26,14 +26,18 @@ func main() {
 		log.Fatalf("Failed to connect to Kubernetes cluster: %v", err)
 	}
 
-	model, err := gemini.NewModel(ctx, config.ModelName("platform_checker"), &genai.ClientConfig{
-		APIKey: os.Getenv("GOOGLE_API_KEY"),
-	})
+	clientConfig := &genai.ClientConfig{APIKey: os.Getenv("GOOGLE_API_KEY")}
+
+	model, err := gemini.NewModel(ctx, config.ModelName("platform_checker"), clientConfig)
 	if err != nil {
 		log.Fatalf("Failed to create platform_checker model: %v", err)
 	}
+	subModel, err := gemini.NewModel(ctx, config.ModelName("platform_checker_sub_agents"), clientConfig)
+	if err != nil {
+		log.Fatalf("Failed to create platform_checker sub-agent model: %v", err)
+	}
 
-	platformCheckerAgent, err := agents.NewPlatformCheckerRoot(model)
+	platformCheckerAgent, err := agents.NewPlatformCheckerRoot(model, subModel)
 	if err != nil {
 		log.Fatalf("Failed to create platform_checker agent: %v", err)
 	}
