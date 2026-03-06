@@ -42,7 +42,7 @@ func SaveReportMarkdown() tool.Tool {
 func SaveReportPDF() tool.Tool {
 	t, _ := functiontool.New(functiontool.Config{
 		Name:        "save_report_pdf",
-		Description: "Save the client report as a PDF file. Returns the file path written.",
+		Description: "Save the report as a PDF. If content is empty, reads from the previously saved .md file with the same filename.",
 	}, func(ctx tool.Context, args ReportArgs) (Result, error) {
 		path, err := resolveReportPath(args.Filename, ".pdf")
 		if err != nil {
@@ -51,7 +51,14 @@ func SaveReportPDF() tool.Tool {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return Result{}, fmt.Errorf("creating reports directory: %w", err)
 		}
-		if err := renderMarkdownToPDF(args.Title, args.Content, path); err != nil {
+		content := args.Content
+		if content == "" && args.Filename != "" {
+			mdPath, _ := resolveReportPath(args.Filename, ".md")
+			if data, err := os.ReadFile(mdPath); err == nil {
+				content = string(data)
+			}
+		}
+		if err := renderMarkdownToPDF(args.Title, content, path); err != nil {
 			return Result{}, fmt.Errorf("generating PDF: %w", err)
 		}
 		abs, _ := filepath.Abs(path)
