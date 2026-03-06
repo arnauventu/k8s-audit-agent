@@ -11,9 +11,11 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  ArrowRight,
   Shield,
-  FlaskConical,
+  Github,
+  Globe,
+  Play,
+  Square,
 } from "lucide-react";
 import "./App.css";
 
@@ -59,11 +61,8 @@ function makeStages(): Stage[] {
   return STAGE_DEFS.map((s) => ({ ...s, status: "idle", output: "" }));
 }
 
-const EXAMPLE_PROMPTS = [
-  "Audit the repository for security vulnerabilities and check cluster deployment readiness",
-  "Check for hardcoded secrets, Kubernetes misconfigurations, and RBAC issues",
-  "Full security audit: scan code, inspect cluster, correlate findings and report",
-];
+const DEFAULT_PROMPT =
+  "Audit the repository for security vulnerabilities, hardcoded secrets, Kubernetes misconfigurations, and check cluster deployment readiness. Correlate findings and report.";
 
 // ---------------------------------------------------------------------------
 // Mock data for dev preview
@@ -165,7 +164,8 @@ async function* streamText(text: string, chunkSize = 8, delayMs = 15) {
 // Main component
 // ---------------------------------------------------------------------------
 export default function App() {
-  const [prompt, setPrompt] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
+  const [clusterUrl, setClusterUrl] = useState("");
   const [stages, setStages] = useState<Stage[]>(makeStages());
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
@@ -283,7 +283,7 @@ export default function App() {
       const response = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: DEFAULT_PROMPT }),
         signal: abortRef.current.signal,
       });
 
@@ -323,12 +323,12 @@ export default function App() {
       setRunning(false);
       setLiveText("");
     }
-  }, [prompt, processEvent]);
+  }, [processEvent]);
 
   // ── Submit handler ────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
     async (mock = false) => {
-      if (!prompt.trim() || running) return;
+      if (running) return;
       setRunning(true);
       setDone(false);
       setError(null);
@@ -341,7 +341,7 @@ export default function App() {
         await runReal();
       }
     },
-    [prompt, running, runMock, runReal]
+    [running, runMock, runReal]
   );
 
   const handleStop = () => {
@@ -376,71 +376,93 @@ export default function App() {
               <span className="gradient-text">start to finish.</span>
             </h1>
             <p className="hero-sub">
-              One prompt. Four agents. Full pipeline — repo scan, cluster
-              inspection, correlation, and reporting.
+              Set your targets and launch. Four agents, full pipeline — repo
+              scan, cluster inspection, correlation, and reporting.
             </p>
           </div>
         )}
 
-        {/* Prompt bar */}
-        <div className={`prompt-wrap ${hasStarted ? "compact" : ""}`}>
-          <div className="prompt-box">
-            <textarea
-              className="prompt-textarea"
-              placeholder="Audit repo for secrets, Kubernetes misconfigs, and deployment readiness..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                  handleSubmit(false);
-              }}
-              rows={hasStarted ? 2 : 3}
-              disabled={running}
-            />
-            <div className="prompt-footer">
-              <span className="prompt-hint">⌘↵ to run</span>
-              <div className="prompt-actions">
-                {running ? (
-                  <button className="btn btn-stop" onClick={handleStop}>
-                    Stop
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      className="btn btn-mock"
-                      onClick={() => handleSubmit(true)}
-                      disabled={!prompt.trim()}
-                      title="Run with mock data (no backend needed)"
-                    >
-                      <FlaskConical size={14} /> Preview
-                    </button>
-                    <button
-                      className="btn btn-run"
-                      onClick={() => handleSubmit(false)}
-                      disabled={!prompt.trim()}
-                    >
-                      Run audit <ArrowRight size={15} />
-                    </button>
-                  </>
-                )}
-              </div>
+        {/* Targets */}
+        <div className={`targets-wrap ${hasStarted ? "targets-compact" : ""}`}>
+          {hasStarted ? (
+            <div className="targets-chips">
+              {githubRepo && (
+                <span className="target-chip">
+                  <Github size={12} />
+                  {githubRepo}
+                </span>
+              )}
+              {clusterUrl && (
+                <span className="target-chip">
+                  <Globe size={12} />
+                  {clusterUrl}
+                </span>
+              )}
             </div>
-          </div>
-
-          {!hasStarted && (
-            <div className="examples">
-              {EXAMPLE_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  className="example-chip"
-                  onClick={() => setPrompt(p)}
-                >
-                  {p}
-                </button>
-              ))}
+          ) : (
+            <div className="targets-grid">
+              <div className="target-card">
+                <div className="target-card-label">
+                  <Github size={14} />
+                  GitHub Repository
+                </div>
+                <input
+                  className="target-input"
+                  type="text"
+                  placeholder="owner/repo"
+                  value={githubRepo}
+                  onChange={(e) => setGithubRepo(e.target.value)}
+                  spellCheck={false}
+                />
+                <span className="target-hint">e.g. astrokube/hackathon-1-team-2</span>
+              </div>
+              <div className="target-card">
+                <div className="target-card-label">
+                  <Globe size={14} />
+                  Cluster URL
+                </div>
+                <input
+                  className="target-input"
+                  type="text"
+                  placeholder="https://k8s.example.com"
+                  value={clusterUrl}
+                  onChange={(e) => setClusterUrl(e.target.value)}
+                  spellCheck={false}
+                />
+                <span className="target-hint">e.g. https://api.cluster.internal</span>
+              </div>
             </div>
           )}
         </div>
+
+        {/* Run / Stop button */}
+        {!hasStarted ? (
+          <div className="run-wrap">
+            <button
+              className="btn-run-big"
+              onClick={() => handleSubmit(false)}
+              disabled={running}
+            >
+              <Play size={18} fill="currentColor" />
+              Run audit
+            </button>
+            <button
+              className="btn-preview-big"
+              onClick={() => handleSubmit(true)}
+              disabled={running}
+              title="Run with mock data"
+            >
+              Preview with mock data
+            </button>
+          </div>
+        ) : running ? (
+          <div className="run-wrap run-wrap-compact">
+            <button className="btn-stop-big" onClick={handleStop}>
+              <Square size={14} fill="currentColor" />
+              Stop
+            </button>
+          </div>
+        ) : null}
 
         {/* Error banner */}
         {error && (

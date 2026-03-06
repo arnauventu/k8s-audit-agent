@@ -102,159 +102,203 @@
 }
 
 /* ============================================================
-   Prompt bar
+   Targets panel
    ============================================================ */
-.prompt-wrap {
-  margin-bottom: 2rem;
+.targets-wrap {
+  margin-bottom: 1.25rem;
 }
 
-.prompt-wrap.compact {
-  padding-top: 1.5rem;
+.targets-compact {
+  margin-bottom: 0.5rem;
 }
 
-.prompt-box {
+.targets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .targets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.target-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  padding: 0.85rem 1rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.prompt-box:focus-within {
+.target-card:focus-within {
   border-color: var(--border-active);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.prompt-textarea {
-  width: 100%;
+.target-card-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.target-card-label svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.target-input {
   background: transparent;
   border: none;
   outline: none;
-  resize: none;
   color: var(--text);
-  font-size: 0.97rem;
-  line-height: 1.6;
-  padding: 1rem 1.1rem 0.5rem;
-  font-family: inherit;
-  box-sizing: border-box;
+  font-size: 0.95rem;
+  font-weight: 500;
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  letter-spacing: -0.01em;
 }
 
-.prompt-textarea::placeholder {
+.target-input::placeholder {
   color: var(--text-faint);
+  font-weight: 400;
 }
 
-.prompt-textarea:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.prompt-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem 0.75rem;
-}
-
-.prompt-hint {
-  font-size: 0.76rem;
+.target-hint {
+  font-size: 0.72rem;
   color: var(--text-faint);
   font-family: ui-monospace, monospace;
 }
 
-/* ============================================================
-   Buttons
-   ============================================================ */
-.btn {
+/* Compact chips shown after audit starts */
+.targets-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+
+.target-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+  padding: 0.2rem 0.7rem;
+}
+
+.target-chip svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Run / Stop buttons
+   ============================================================ */
+.run-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 2.5rem;
+}
+
+.run-wrap-compact {
+  flex-direction: row;
+  justify-content: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.btn-run-big {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--accent);
+  color: #fff;
   border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.85rem 2.5rem;
+  width: 100%;
+  max-width: 360px;
+  letter-spacing: -0.01em;
+  box-shadow: 0 0 0 0 var(--accent-glow);
+  transition: opacity 0.15s, box-shadow 0.2s, transform 0.15s;
+}
+
+.btn-run-big:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: 0 0 0 6px var(--accent-glow);
+  transform: translateY(-1px);
+}
+
+.btn-run-big:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-run-big:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-preview-big {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+
+.btn-preview-big:hover:not(:disabled) {
+  color: var(--text-muted);
+}
+
+.btn-preview-big:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-stop-big {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
   font-family: inherit;
-  padding: 0.45rem 1rem;
-  transition: opacity 0.15s, background 0.15s;
+  padding: 0.5rem 1.1rem;
+  transition: color 0.15s, border-color 0.15s;
 }
 
-.btn-run {
-  background: var(--accent);
-  color: #fff;
-}
-
-.btn-run:hover:not(:disabled) {
-  opacity: 0.88;
-}
-
-.btn-run:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.btn-stop {
-  background: var(--surface-2);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-}
-
-.btn-stop:hover {
+.btn-stop-big:hover {
   color: var(--red);
   border-color: var(--red);
-}
-
-.btn-mock {
-  background: var(--surface-2);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-}
-
-.btn-mock:hover:not(:disabled) {
-  color: var(--amber);
-  border-color: var(--amber);
-}
-
-.btn-mock:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.prompt-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ============================================================
-   Example chips
-   ============================================================ */
-.examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 1rem;
-  justify-content: center;
-}
-
-.example-chip {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  padding: 0.35rem 0.9rem;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.15s, color 0.15s;
-  max-width: 340px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.example-chip:hover {
-  border-color: var(--border-active);
-  color: var(--text);
 }
 
 /* ============================================================
