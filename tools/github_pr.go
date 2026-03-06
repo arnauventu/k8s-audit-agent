@@ -50,6 +50,13 @@ type GetPRPlanFileArgs struct {
 	Number int `json:"number" description:"GitHub PR number"`
 }
 
+type CommitFileToBranchArgs struct {
+	BranchName string `json:"branch_name" description:"Branch name to commit to (e.g. remediation/issue-42)"`
+	FilePath   string `json:"file_path" description:"Repo-relative path to create or update (e.g. Dockerfile, k8s/deployment.yaml)"`
+	Content    string `json:"content" description:"Full corrected file content to write"`
+	Message    string `json:"message" description:"Commit message describing the fix"`
+}
+
 // --- Tools ---
 
 func CreateRemediationPR() tool.Tool {
@@ -565,6 +572,58 @@ func GetPRComments() tool.Tool {
 			Summary: fmt.Sprintf("Found %d comments/reviews on PR #%d", len(items), args.Number),
 			Items:   items,
 			Issues:  []string{},
+		}, nil
+	})
+	return t
+}
+
+func CommitFileToBranch() tool.Tool {
+	t, _ := functiontool.New(functiontool.Config{
+		Name:        "commit_file_to_branch",
+		Description: "Create or update a single file on an existing branch. Use this to commit actual fixes to a remediation PR branch.",
+	}, func(ctx tool.Context, args CommitFileToBranchArgs) (Result, error) {
+		client, err := githubClient()
+		if err != nil {
+			return Result{}, err
+		}
+		owner, repo, err := parseOwnerRepo()
+		if err != nil {
+			return Result{}, err
+		}
+		bgCtx := context.Background()
+
+		// Check if the file already exists on this branch (we need its SHA to update it).
+		existing, _, _, _ := client.Repositories.GetContents(bgCtx, owner, repo, args.FilePath, &github.RepositoryContentGetOptions{
+			Ref: args.BranchName,
+		})
+
+		opts := &github.RepositoryContentFileOptions{
+			Message: github.Ptr(args.Message),
+			Content: []byte(args.Content),
+			Branch:  github.Ptr(args.BranchName),
+		}
+		if existing != nil {
+			opts.SHA = github.Ptr(existing.GetSHA())
+			_, _, err = client.Repositories.UpdateFile(bgCtx, owner, repo, args.FilePath, opts)
+		} else {
+			_, _, err = client.Repositories.CreateFile(bgCtx, owner, repo, args.FilePath, opts)
+		}
+		if err != nil {
+			return Result{}, fmt.Errorf("failed to commit %s to branch %s: %w", args.FilePath, args.BranchName, err)
+		}
+
+		action := "Created"
+		if existing != nil {
+			action = "Updated"
+		}
+		return Result{
+			Summary: fmt.Sprintf("%s %s on branch %s", action, args.FilePath, args.BranchName),
+			Items: []Item{{
+				Name:    args.FilePath,
+				Status:  action,
+				Details: fmt.Sprintf("Branch: %s, Commit: %s", args.BranchName, args.Message),
+			}},
+			Issues: []string{},
 		}, nil
 	})
 	return t

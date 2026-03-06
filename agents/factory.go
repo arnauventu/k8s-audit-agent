@@ -501,11 +501,26 @@ For each CRITICAL or HIGH finding, create a GitHub issue using create_inspection
 For MEDIUM findings: create one grouped issue titled "Audit: Medium severity findings" listing all of them.
 For LOW findings: create one issue titled "Audit: Housekeeping items".
 
-### 2. GITHUB PR — Remediation plan
-Create a single PR using create_remediation_pr. The plan file should contain:
-- All findings ordered by severity
-- Specific remediation steps for each (copy from the report's Recommendations section)
-- Reference the issue numbers created in step 1
+### 2. GITHUB PR — Actual fixes + remediation plan
+
+Create a single PR using create_remediation_pr. Note the branch name returned in the result — you will commit fixes to it.
+
+**After the PR is created, apply actual file fixes for every finding that references a specific file path.**
+
+For each finding with a File: path that is a Dockerfile, Kubernetes manifest (YAML), or CI config:
+1. Use read_repo_file to fetch the current file content
+2. Apply the fix described in the finding's Remediation field — generate the complete corrected file
+3. Use commit_file_to_branch to write it to the PR branch (branch name from step above)
+4. Use a descriptive commit message referencing the finding ID (e.g. fix(REPO-003): add non-root USER directive to Dockerfile)
+
+**What to fix automatically:**
+- Dockerfile: add/fix USER (non-root), pin base image tags, add HEALTHCHECK, add .dockerignore, add EXPOSE
+- K8s manifests: add resource requests/limits, add liveness/readiness probes, fix runAsNonRoot/securityContext, pin image tags, move plain env secrets to secretKeyRef stubs
+
+**Do NOT auto-fix:**
+- Source code files (.go, .py, .js, .ts, etc.) — logic changes require human review
+- Actual secret values — never write credentials into files
+- Production infrastructure resources
 
 ### 3. SLACK — Send report via send_report_to_slack
 Use send_report_to_slack (NOT send_slack_message) with:
@@ -529,8 +544,11 @@ If reports/audit-report.pdf does not exist yet, use convert_markdown_file_to_pdf
 			tools.ConvertMarkdownFileToPDF(),
 			tools.CreateInspectionIssue(),
 			tools.CreateRemediationPR(),
+			tools.CommitFileToBranch(),
 			tools.ListRemediationIssues(),
 			tools.SendReportToSlack(),
+			tools.GetRepoTree(),
+			tools.ReadRepoFile(),
 		},
 	})
 }
